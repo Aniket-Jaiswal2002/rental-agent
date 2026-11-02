@@ -1,0 +1,18 @@
+{
+  "id": "04_hinglish_renter",
+  "description": "Hinglish input with a spoken-number budget (tees hazaar = 30000); agent replies in English.",
+  "turns": [
+    {"say": "Namaste, mujhe Gurgaon mein ek 2 BHK flat chahiye, budget tees hazaar tak hai."},
+    {"say": "Sector 56 ya Sector 57 mein dekh rahe hain, office Cyber City mein hai."},
+    {"say": "1 December se shift hona hai."},
+    {"say": "Haan bilkul sahi hai.", "await_read_back": true}
+  ],
+  "expected_profile": {
+    "budget_max": 30000,
+    "areas": ["Sector 56", "Sector 57"],
+    "bhk": [2],
+    "move_in_date": "2026-12-01",
+    "commute_destination": "cyber city"
+  },
+  "expect": {"min_searches": 1}
+}

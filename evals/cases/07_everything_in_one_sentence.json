@@ -1,0 +1,16 @@
+{
+  "id": "07_everything_in_one_sentence",
+  "description": "All required fields in the first utterance; the agent must go straight to the read-back with zero extra questions.",
+  "turns": [
+    {"say": "I need a 2 BHK in Sector 56, budget 30000 a month, moving in on 1st December, and my office is at Cyber City."},
+    {"say": "Yes, that's right.", "await_read_back": true}
+  ],
+  "expected_profile": {
+    "budget_max": 30000,
+    "areas": ["Sector 56"],
+    "bhk": [2],
+    "move_in_date": "2026-12-01",
+    "commute_destination": "cyber city"
+  },
+  "expect": {"min_searches": 1, "zero_questions_first_turn": true}
+}

@@ -1,0 +1,18 @@
+{
+  "id": "03_contradictory_info",
+  "description": "Renter states two different budgets with no correction cue; the agent must ask which is right instead of silently picking one.",
+  "turns": [
+    {"say": "I'm looking for a 2 BHK in Sector 56, my budget is 30000."},
+    {"say": "My budget is 20000. I'll move in on 1st December and my office is at Cyber City."},
+    {"say": "Sorry, 30000 is the right budget."},
+    {"say": "Yes, that's right.", "await_read_back": true}
+  ],
+  "expected_profile": {
+    "budget_max": 30000,
+    "areas": ["Sector 56"],
+    "bhk": [2],
+    "move_in_date": "2026-12-01",
+    "commute_destination": "cyber city"
+  },
+  "expect": {"min_searches": 1, "asking_at_turn": {"2": ["budget_max"]}}
+}

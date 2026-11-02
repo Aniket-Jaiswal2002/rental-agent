@@ -1,0 +1,20 @@
+{
+  "id": "01_vague_renter",
+  "description": "Opens with almost nothing; the agent must draw out every required field before searching.",
+  "turns": [
+    {"say": "Hi, I need a flat in Gurgaon."},
+    {"say": "Around 30,000 a month I think."},
+    {"say": "Sector 56, or maybe Sector 54."},
+    {"say": "2 BHK."},
+    {"say": "Probably the 1st of December. My office is at Cyber City."},
+    {"say": "Yes, that's right.", "await_read_back": true}
+  ],
+  "expected_profile": {
+    "budget_max": 30000,
+    "areas": ["Sector 56", "Sector 54"],
+    "bhk": [2],
+    "move_in_date": "2026-12-01",
+    "commute_destination": "cyber city"
+  },
+  "expect": {"min_searches": 1}
+}

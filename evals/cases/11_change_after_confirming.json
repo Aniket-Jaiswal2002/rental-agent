@@ -1,0 +1,18 @@
+{
+  "id": "11_change_after_confirming",
+  "description": "Renter confirms, sees a shortlist, then changes the budget; confirmation must reset and a second read-back and confirmation must precede the second search.",
+  "turns": [
+    {"say": "I need a 2 BHK in Sector 56 or Sector 57, budget 30000, moving in 1st December, office at Cyber City."},
+    {"say": "Yes, that's right.", "await_read_back": true},
+    {"say": "Actually, make the budget 40000."},
+    {"say": "Yes, go ahead.", "await_read_back": true}
+  ],
+  "expected_profile": {
+    "budget_max": 40000,
+    "areas": ["Sector 56", "Sector 57"],
+    "bhk": [2],
+    "move_in_date": "2026-12-01",
+    "commute_destination": "cyber city"
+  },
+  "expect": {"min_searches": 2, "changes_contain": [{"field": "budget_max", "old": 30000, "new": 40000}]}
+}

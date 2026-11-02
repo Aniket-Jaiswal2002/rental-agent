@@ -1,0 +1,16 @@
+{
+  "id": "05_no_match",
+  "description": "No listing satisfies the request (4 BHK under 20000 in Sector 54); the agent must say so and show nothing.",
+  "turns": [
+    {"say": "I need a 4 BHK in Sector 54, budget 20000, moving in by 1st December, and my office is at Cyber City."},
+    {"say": "Yes, that's right.", "await_read_back": true}
+  ],
+  "expected_profile": {
+    "budget_max": 20000,
+    "areas": ["Sector 54"],
+    "bhk": [4],
+    "move_in_date": "2026-12-01",
+    "commute_destination": "cyber city"
+  },
+  "expect": {"min_searches": 1, "no_match": true}
+}

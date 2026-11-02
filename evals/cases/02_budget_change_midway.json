@@ -1,0 +1,18 @@
+{
+  "id": "02_budget_change_midway",
+  "description": "Renter raises the budget in reply to the read-back; memory must update, be announced, and be re-confirmed before searching.",
+  "turns": [
+    {"say": "I'm looking for a 2 BHK in Sector 56 or Sector 57, budget around 25000."},
+    {"say": "I want to move in by 1st December and my office is in Cyber City."},
+    {"say": "Actually make the budget 35000.", "await_read_back": true},
+    {"say": "Yes, that's right.", "await_read_back": true}
+  ],
+  "expected_profile": {
+    "budget_max": 35000,
+    "areas": ["Sector 56", "Sector 57"],
+    "bhk": [2],
+    "move_in_date": "2026-12-01",
+    "commute_destination": "cyber city"
+  },
+  "expect": {"min_searches": 1, "changes_contain": [{"field": "budget_max", "old": 25000, "new": 35000}]}
+}

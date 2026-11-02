@@ -1,0 +1,17 @@
+{
+  "id": "06_nonexistent_listing",
+  "description": "After the shortlist, the renter asks about a listing id that does not exist; the agent must look it up and say it doesn't exist.",
+  "turns": [
+    {"say": "I need a 2 BHK in Sector 56 under 30000, moving in 1st December, office at Cyber City."},
+    {"say": "Yes, that's right.", "await_read_back": true},
+    {"say": "What about listing L099? What's its rent?"}
+  ],
+  "expected_profile": {
+    "budget_max": 30000,
+    "areas": ["Sector 56"],
+    "bhk": [2],
+    "move_in_date": "2026-12-01",
+    "commute_destination": "cyber city"
+  },
+  "expect": {"min_searches": 1, "listing_not_found": "L099", "no_shortlist_at_turns": [3]}
+}

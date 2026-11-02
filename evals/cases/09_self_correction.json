@@ -1,0 +1,17 @@
+{
+  "id": "09_self_correction",
+  "description": "Renter corrects an area they just gave; the new value must replace the old one, not be added to it.",
+  "turns": [
+    {"say": "I'm looking for a 2 BHK in Sector 54, around 30000."},
+    {"say": "Sorry, I meant Sector 56, not 54. I'm moving in on 1st December and my office is at Cyber City."},
+    {"say": "Yes, that's right.", "await_read_back": true}
+  ],
+  "expected_profile": {
+    "budget_max": 30000,
+    "areas": ["Sector 56"],
+    "bhk": [2],
+    "move_in_date": "2026-12-01",
+    "commute_destination": "cyber city"
+  },
+  "expect": {"min_searches": 1, "changes_contain": [{"field": "areas", "new": ["Sector 56"]}]}
+}
