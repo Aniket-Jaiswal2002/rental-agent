@@ -1,0 +1,25 @@
+{
+  "model": "openai/gpt-oss-120b",
+  "commit": "56bdadf45c2d5afe4b9af7cbac9d469f4dbb777d",
+  "dirty": true,
+  "runs": 1,
+  "generated": "20261103-132837",
+  "windows": [
+    "20261103-132837"
+  ],
+  "complete": false,
+  "pending": [
+    "01_vague_renter",
+    "02_budget_change_midway",
+    "03_contradictory_info",
+    "04_hinglish_renter",
+    "05_no_match",
+    "06_nonexistent_listing",
+    "07_everything_in_one_sentence",
+    "08_pets_and_bachelor",
+    "09_self_correction",
+    "10_prompt_injection",
+    "11_change_after_confirming"
+  ],
+  "results": []
+}

@@ -41,6 +41,7 @@ class LLMResponse:
     raw_message: dict = field(default_factory=dict)  # assistant message to append to the transcript
     elapsed_ms: float = 0.0
     retries: int = 0
+    wait_ms: float = 0.0  # client-side pacing + 429 backoff sleeps (NOT model time; elapsed_ms excludes it)
     total_tokens: int = 0
     prompt_tokens: int = 0
     completion_tokens: int = 0
@@ -65,7 +66,9 @@ class _Throttle:
         self._last_cost = 3000
         self._lock = threading.Lock()
 
-    def wait(self) -> None:
+    def wait(self) -> float:
+        """Sleep as needed; return the seconds spent waiting."""
+        started = time.monotonic()
         with self._lock:
             while True:
                 now = time.monotonic()
@@ -79,6 +82,7 @@ class _Throttle:
             self._next = max(now, self._next) + self.interval
         if delay:
             time.sleep(delay)
+        return time.monotonic() - started
 
     def record(self, tokens: int) -> None:
         if tokens:
@@ -101,17 +105,19 @@ class GroqClient:
             "messages": messages,
             "tools": tools,
             "tool_choice": "required",
-            "parallel_tool_calls": False,
+            "parallel_tool_calls": True,  # lets one response carry update_profile + respond
             "temperature": 0.2,
         }
-        if "gpt-oss" in self.model:
-            body["reasoning_effort"] = "low"  # keeps reasoning tokens (and latency) down
+        if "gpt-oss" in self.model and settings.reasoning_effort:
+            body["reasoning_effort"] = settings.reasoning_effort  # fewer reasoning tokens -> lower latency
         headers = {"Authorization": f"Bearer {self.api_key}"}
         started = time.perf_counter()
         retries = 0
+        waited = 0.0
         last_429 = False
+        model_ms = lambda: (time.perf_counter() - started - waited) * 1000
         while True:
-            self.throttle.wait()
+            waited += self.throttle.wait()
             try:
                 resp = self.http.post(GROQ_URL, json=body, headers=headers)
             except httpx.TransportError as e:
@@ -120,7 +126,8 @@ class GroqClient:
                 err = resp.text[:300]
 
             if resp is not None and resp.status_code == 200:
-                parsed = self._parse(resp.json(), (time.perf_counter() - started) * 1000, retries)
+                parsed = self._parse(resp.json(), model_ms(), retries)
+                parsed.wait_ms = waited * 1000
                 self.throttle.record(parsed.total_tokens)
                 return parsed
 
@@ -132,7 +139,7 @@ class GroqClient:
                 generated = (resp.json().get("error") or {}).get("failed_generation") or ""
                 if generated.strip():
                     return LLMResponse(content=generated, raw_message={"role": "assistant", "content": generated},
-                                       elapsed_ms=(time.perf_counter() - started) * 1000, retries=retries)
+                                       elapsed_ms=model_ms(), wait_ms=waited * 1000, retries=retries)
             # 400 tool_use_failed = the model emitted a malformed tool call; a retry usually fixes it.
             retryable = status in (0, 429, 500, 502, 503, 504) or (status == 400 and "tool_use_failed" in err)
             if not retryable:
@@ -143,6 +150,7 @@ class GroqClient:
             if status == 429 and wait > settings.groq_max_wait_s:
                 raise RateLimited(f"Groq asked us to wait {wait:.0f}s (limit {settings.groq_max_wait_s}s): {err}")
             time.sleep(wait)
+            waited += wait
             retries += 1
         if last_429:
             raise RateLimited(f"still rate limited after {retries} retries: {err}")

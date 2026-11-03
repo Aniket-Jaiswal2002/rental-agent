@@ -1,9 +1,11 @@
-"""Agent-loop tests with a scripted fake LLM (no network): grounding and the search gate."""
+"""Agent-loop tests with a scripted fake LLM (no network): grounding, the search gate, change kinds,
+and the steps the code takes itself (read-back, search after confirmation)."""
 import json
 
-from app.agent import Agent
+from app.agent import Agent, read_back_text
 from app.listings import load_listings
 from app.llm import LLMResponse, ToolCall
+from app.profile import RenterProfile
 
 FULL = {"budget_max": 30000, "areas": ["Sector 56"], "bhk": [2], "move_in_date": "2026-12-01",
         "commute_destination": "Cyber City"}
@@ -31,6 +33,13 @@ def respond(reply="ok", asking_for=(), shortlist=(), no_match=None):
     return ("respond", args)
 
 
+def upd(changes, kinds):
+    return ("update_profile", {"changes": changes, "change_kinds": kinds})
+
+
+CONFIRM = ("confirm_profile", {"renter_quote": "yes"})
+
+
 def awaiting_agent(script) -> Agent:
     """An agent whose profile is complete and was read back on the previous turn."""
     a = Agent(FakeLLM(script))
@@ -44,15 +53,16 @@ def tool_results(agent: Agent, call_index: int) -> list[dict]:
     return [json.loads(m["content"]) for m in agent.llm.calls[call_index] if m["role"] == "tool"]
 
 
+# -- grounding -------------------------------------------------------------------------------------
+
 def test_invented_listing_id_is_rejected_then_real_one_rendered_from_dataset():
     a = awaiting_agent([
-        [("confirm_profile", {"renter_quote": "yes"})],
-        [("search_listings", {})],
+        [CONFIRM],  # the code then runs the search itself
         [respond("Here you go.", shortlist=[{"listing_id": "L999", "tradeoff": "Great flat for 20000"}])],
         [respond("Here you go.", shortlist=[{"listing_id": "L021", "tradeoff": "Closest to your budget."}])],
     ])
     r = a.turn("yes")
-    rejected = [m for m in tool_results(a, 3) if "error" in m]
+    rejected = [m for m in tool_results(a, 2) if "error" in m]
     assert rejected and "L999" in rejected[0]["error"]
     assert [x["id"] for x in r.shortlist] == ["L021"]
     truth = load_listings()["L021"]
@@ -63,8 +73,7 @@ def test_invented_listing_id_is_rejected_then_real_one_rendered_from_dataset():
 def test_listing_not_in_latest_results_cannot_be_cited():
     # L001 exists in the dataset but is not in the latest search results (2 BHK, Sector 56 -> only L021)
     a = awaiting_agent([
-        [("confirm_profile", {"renter_quote": "yes"})],
-        [("search_listings", {})],
+        [CONFIRM],
         [respond(shortlist=[{"listing_id": "L001", "tradeoff": "x"}])],
         [respond(shortlist=[{"listing_id": "L021", "tradeoff": "y"}])],
     ])
@@ -73,35 +82,60 @@ def test_listing_not_in_latest_results_cannot_be_cited():
 
 
 def test_search_before_confirmation_is_refused():
-    a = Agent(FakeLLM([[upd(FULL, dict.fromkeys(FULL, "new"))], [("search_listings", {})],
-                       [("read_back_profile", {})], [respond("Please confirm: 2 BHK...")]]))
+    a = Agent(FakeLLM([[upd(FULL, dict.fromkeys(FULL, "new")), ("search_listings", {})]]))
     r = a.turn("2 BHK Sector 56 30k 1 Dec Cyber City")
     searches = [t for t in r.tool_log if t["name"] == "search_listings"]
-    assert searches and "error" in searches[0]["result"] and "not confirmed" in searches[0]["result"]["error"]
+    assert searches and "not confirmed" in searches[0]["result"]["error"]
     assert r.state["awaiting_confirmation"] and not r.state["confirmed"]
 
 
 def test_no_match_requires_notice_and_empty_shortlist():
     a = awaiting_agent([
         [upd({"bhk": [4], "budget_max": 20000, "areas": ["Sector 54"]}, dict.fromkeys(["bhk", "budget_max", "areas"], "correction"))],
-        [("read_back_profile", {})],
-        [respond("Please confirm.")],
-    ])
-    a.turn("make it 4 BHK, 20k, sector 54")  # 3 LLM calls (indices 0-2); renter now sees a new read-back
-    a.llm.script += [
-        [("confirm_profile", {"renter_quote": "yes"})],
-        [("search_listings", {})],
+        [CONFIRM],
         [respond("Found some.", shortlist=[{"listing_id": "L022", "tradeoff": "x"}])],  # forced bad match
         [respond("Nothing matches 4 BHK under 20k there.", no_match=True)],
-    ]
+    ])
+    a.turn("make it 4 BHK, 20k, sector 54")  # 1 LLM call; the code reads the new profile back
     r = a.turn("yes")
     assert r.no_match and r.shortlist == []
-    assert any("error" in m for m in tool_results(a, 6))  # the forced match was bounced back to the model
+    assert any("error" in m for m in tool_results(a, 3))  # the forced match was bounced back to the model
 
 
-def upd(changes, kinds):
-    return ("update_profile", {"changes": changes, "change_kinds": kinds})
+# -- code-driven steps: one LLM call where the code can finish the turn -------------------------------
 
+def test_complete_profile_is_read_back_by_code_in_one_call():
+    a = Agent(FakeLLM([[upd(FULL, dict.fromkeys(FULL, "new")), respond("Great, let me check.")]]))
+    r = a.turn("I need a 2 BHK in Sector 56, 30000, 1 December, office at Cyber City")
+    assert r.timings.llm_calls == 1
+    assert r.reply == read_back_text(a.state.profile) and r.asking_for == []
+    assert r.state["awaiting_confirmation"]
+    assert any(t["name"] == "read_back_profile" and t.get("by") == "code" for t in r.tool_log)
+
+
+def test_update_and_reply_in_one_response_is_one_call():
+    a = Agent(FakeLLM([[upd({"bhk": [2]}, {"bhk": "new"}), respond("What's your budget?", asking_for=["budget_max"])]]))
+    r = a.turn("2 BHK please")
+    assert r.timings.llm_calls == 1 and r.asking_for == ["budget_max"] and r.state["profile"]["bhk"] == [2]
+
+
+def test_confirmation_triggers_search_by_code_then_one_reply():
+    a = awaiting_agent([[CONFIRM], [respond("Here's the best match.", shortlist=[{"listing_id": "L021", "tradeoff": "Within budget."}])]])
+    r = a.turn("yes")
+    assert r.timings.llm_calls == 2
+    assert [t["name"] for t in r.tool_log] == ["confirm_profile", "search_listings"]
+    assert r.tool_log[1].get("by") == "code" and [x["id"] for x in r.shortlist] == ["L021"]
+
+
+def test_read_back_text_covers_every_field():
+    p = RenterProfile.model_validate({**FULL, "bhk": [2, 3], "areas": ["Sector 56", "Sector 57"], "pets": True, "tenant_type": "family"})
+    text = read_back_text(p)
+    assert text.startswith("Let me confirm: a 2 or 3 BHK in Sector 56 or Sector 57, budget up to 30,000 rupees a month, "
+                           "moving in on 1 December 2026, commuting to Cyber City, with a pet, for a family.")
+    assert "Furnishing, parking are open" in text and text.endswith("Shall I search with this?")
+
+
+# -- change kinds ----------------------------------------------------------------------------------
 
 def test_conflict_is_not_applied_and_agent_must_ask():
     a = Agent(FakeLLM([
@@ -118,18 +152,17 @@ def test_conflict_is_not_applied_and_agent_must_ask():
     assert r.asking_for == ["budget_max"] and r.updates == []
 
 
-def test_conflict_blocks_read_back_in_the_same_turn():
+def test_conflict_blocks_the_code_read_back():
+    rest = {k: v for k, v in FULL.items() if k != "budget_max"}
     a = Agent(FakeLLM([
-        [upd({"budget_max": 30000, "areas": ["Sector 56"], "bhk": [2], "move_in_date": "2026-12-01", "commute_destination": "Cyber City"},
-             dict.fromkeys(["budget_max", "areas", "bhk", "move_in_date", "commute_destination"], "new"))],
-        [respond("Which budget?", asking_for=["budget_max"])],
-        [upd({"budget_max": 20000}, {"budget_max": "conflict"})], [("read_back_profile", {})],
-        [respond("Which budget, 30000 or 20000?", asking_for=["budget_max"])],
+        [upd({"budget_max": 30000}, {"budget_max": "new"}), respond("Which area?", asking_for=["areas"])],
+        [upd({**rest, "budget_max": 20000}, {**dict.fromkeys(rest, "new"), "budget_max": "conflict"}),
+         respond("Is your budget 30000 or 20000?", asking_for=["budget_max"])],
     ]))
-    a.turn("everything, budget 30000")
-    r = a.turn("budget is 20000")
-    read_back = next(c for c in r.tool_log if c["name"] == "read_back_profile")
-    assert "error" in read_back["result"] and not r.state["awaiting_confirmation"]
+    a.turn("budget 30000")
+    r = a.turn("Sector 56, 2 BHK, 1 December, Cyber City, budget is 20000")
+    assert not r.state["missing_required"] and not r.state["awaiting_confirmation"]  # complete, but not read back
+    assert r.asking_for == ["budget_max"] and r.timings.llm_calls == 1
 
 
 def test_english_correction_is_applied_and_announced_old_to_new():
@@ -168,18 +201,16 @@ def test_overwrite_mislabelled_new_is_rejected_atomically():
     assert r.tool_log[0]["result"].get("applied") is None  # nothing applied by the bad call
     assert r.state["profile"]["budget_max"] == 30000 and r.state["profile"]["bhk"] == [2]
 
-def test_changing_budget_after_confirmation_resets_and_requires_new_read_back():
+
+def test_changing_budget_after_confirmation_resets_and_code_reads_back_again():
     a = awaiting_agent([
-        [("confirm_profile", {"renter_quote": "yes"})], [("search_listings", {})],
-        [respond(shortlist=[{"listing_id": "L021", "tradeoff": "ok"}])],
-        [upd({"budget_max": 40000}, {"budget_max": "correction"})],
-        [respond("Updated to 40,000.")],  # rejected: complete + unconfirmed + not asking anything
-        [("read_back_profile", {})],
-        [respond("Updated budget to 40,000. Shall I go ahead with that?")],
+        [CONFIRM], [respond(shortlist=[{"listing_id": "L021", "tradeoff": "ok"}])],
+        [upd({"budget_max": 40000}, {"budget_max": "correction"})],  # one call: the code reads back
     ])
     a.turn("yes")
     assert a.state.confirmed
     r = a.turn("actually make it 40k")
     assert r.changes[0]["field"] == "budget_max" and r.changes[0]["new"] == 40000
     assert r.state["awaiting_confirmation"] and not r.state["confirmed"]
-    assert a.state.last_search is None
+    assert a.state.last_search is None and r.timings.llm_calls == 1
+    assert r.updates == ["Updated budget max: ₹30,000 -> ₹40,000."] and "40,000 rupees" in r.reply

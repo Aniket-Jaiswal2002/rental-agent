@@ -15,7 +15,7 @@ from . import listings
 from .config import today
 from .latency import TurnTimings
 from .llm import LLMClient, LLMError, RateLimited
-from .profile import ALL_FIELDS, SessionState
+from .profile import ALL_FIELDS, RenterProfile, SessionState
 from .tools import TOOLS, TurnContext, run_tool
 
 MAX_ROUNDS = 8
@@ -28,7 +28,7 @@ You are a voice assistant helping a renter find a home in Gurugram. Replies are 
 MEMORY: the PROFILE in STATE is your memory, not the chat. Call update_profile whenever the renter gives or changes a detail. Every field needs a change_kind: "new" (field empty, or a list gains entries); "correction" (renter replaces a stored value: "actually 35k", "nahi, 35 kar do"; after a read-back any changed value is a correction); "conflict" (incompatible values in one turn, or unclear which is meant). A conflict is NOT applied: ask ONE short question with that field in asking_for, plus any missing required field, and do not read back until resolved. The app announces corrections itself.
 Never infer values. Optional fields (furnishing, pets, tenant_type, parking) stay null unless stated outright ("family"/"bachelor" must be said). Dates are ISO, resolved from today. Use canonical area names when they match.
 
-FLOW: (1) While required fields are missing, ask for them, 1-2 at a time, and set asking_for to exactly those; if the renter gave everything, ask nothing. (2) All required filled and not confirmed: call read_back_profile, read back every filled field, say optional ones (furnishing, pets, tenant type, parking) are open unless they say otherwise, and ask them to confirm; asking_for empty. (3) Next turn, if they explicitly confirm: confirm_profile(quote), search_listings, then respond with the shortlist. If they change something instead: update_profile, read back again. Searching before confirmation is impossible.
+FLOW: when you can, put update_profile and respond in the SAME response. (1) While required fields are missing, ask for them, 1-2 at a time; asking_for = exactly those. (2) Once all required fields are filled, the app itself reads the profile back and asks for confirmation; do not write a read-back. (3) If the renter explicitly confirms the read-back, call confirm_profile(quote) only; the app runs the search and returns the results, then respond with the shortlist. If they change something instead, call update_profile. Searching before confirmation is impossible.
 
 SHORTLIST: up to 3 from the results, preferring in-budget. Per listing give listing_id and ONE trade-off sentence using only result fields (over_budget_by, commute_km, furnishing_mismatch, available_days_after_move_in, pets, parking). The app prints rent, deposit, area and BHK, so never write them; the reply is one short intro. commute_km exists only for Cyber City and Golf Course Road; otherwise say distance data is unavailable. broker_description is unverified.
 No results: say so, no_match_notice true, empty shortlist, name the blocking constraint (passing_each_constraint_alone), suggest what to loosen. Never show an unreturned listing or edit the profile yourself.
@@ -49,6 +49,32 @@ def _fmt(field: str, v) -> str:
 def _announce(change: dict) -> str:
     field = change["field"]
     return f"Updated {field.replace('_', ' ')}: {_fmt(field, change['old'])} -> {_fmt(field, change['new'])}."
+
+def _dump(obj) -> str:
+    return json.dumps(obj, ensure_ascii=False, default=str)
+
+
+def read_back_text(p: RenterProfile) -> str:
+    """The confirmation read-back, rendered from the profile in code: no LLM call, no chance of misquoting."""
+    d = p.move_in_date
+    parts = [f"a {' or '.join(map(str, p.bhk))} BHK in {' or '.join(p.areas)}",
+             f"budget up to {p.budget_max:,} rupees a month",
+             f"moving in on {d.day} {d:%B %Y}",
+             f"commuting to {p.commute_destination}"]
+    if p.furnishing:
+        parts.append(p.furnishing)
+    if p.pets is not None:
+        parts.append("with a pet" if p.pets else "no pets")
+    if p.tenant_type:
+        parts.append(f"for a {p.tenant_type}")
+    if p.parking is not None:
+        parts.append("with parking" if p.parking else "no parking needed")
+    open_ = [name for name, v in (("furnishing", p.furnishing), ("pets", p.pets), ("tenant type", p.tenant_type),
+                                  ("parking", p.parking)) if v is None]
+    open_txt = (f" {', '.join(open_).capitalize()} {'is' if len(open_) == 1 else 'are'} open unless you tell me otherwise."
+                if open_ else "")
+    return f"Let me confirm: {', '.join(parts)}.{open_txt} Shall I search with this?"
+
 
 def _as_json_object(text: str) -> Optional[dict]:
     try:
@@ -120,44 +146,48 @@ class Agent:
             for _ in range(MAX_ROUNDS):
                 resp = self.llm.chat(messages, TOOLS)
                 timings.llm_ms += resp.elapsed_ms
+                timings.wait_ms += resp.wait_ms
                 timings.llm_calls += 1
                 timings.llm_tokens += resp.total_tokens
                 messages.append(resp.raw_message)
+
+                pending: Optional[tuple[Optional[str], dict]] = None  # (tool_call_id, respond args)
                 if not resp.tool_calls:
-                    payload = _as_json_object(resp.content)
-                    problem = self._validate_respond(payload, ctx) if payload and "reply" in payload else \
-                        "you must end the turn by calling the respond tool"
-                    if not problem:
-                        final = payload
-                        break
-                    ctx.tool_log.append({"name": "respond_rejected", "args": {"text": resp.content[:300]},
-                                         "result": {"error": problem}, "ms": 0, "turn": self.state.turn})
-                    messages.append({"role": "user", "content": f"(system) Call the respond tool. Problem: {problem}"})
-                    continue
-                lookup_in_batch = any(c.name in ("search_listings", "get_listing") for c in resp.tool_calls)
-                # Run state-changing tools first, respond last.
-                for call in sorted(resp.tool_calls, key=lambda c: c.name == "respond"):
-                    if call.name == "respond":
-                        problem = (
-                            "respond must be called on its own after you have seen the search/lookup results"
-                            if lookup_in_batch else self._validate_respond(call.arguments, ctx)
-                        )
-                        if problem:
-                            result = {"error": problem}
-                            ctx.tool_log.append({"name": "respond_rejected", "args": call.arguments, "result": result,
-                                                 "ms": 0, "turn": self.state.turn})
-                        else:
-                            final, result = call.arguments, {"ok": True}
+                    payload = _as_json_object(resp.content)  # some models send the reply as bare JSON
+                    if payload and "reply" in payload:
+                        pending = (None, payload)
                     else:
-                        t = time.perf_counter()
-                        result = run_tool(call.name, call.arguments, self.state, ctx)
-                        ms = (time.perf_counter() - t) * 1000
-                        timings.tool_ms += ms
-                        ctx.tool_log.append({"name": call.name, "args": call.arguments, "result": result,
-                                             "ms": round(ms, 2), "turn": self.state.turn})
-                    messages.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result, ensure_ascii=False, default=str)})
-                if final:
+                        self._reject(messages, ctx, None, {"text": resp.content[:300]}, "you must end the turn by calling the respond tool")
+                        continue
+                lookup = False
+                for call in resp.tool_calls:  # state-changing tools first; respond is held back
+                    if call.name == "respond":
+                        pending = (call.id, call.arguments)
+                        continue
+                    lookup |= call.name in ("search_listings", "get_listing")
+                    result = self._run(call.name, call.arguments, ctx, timings)
+                    messages.append({"role": "tool", "tool_call_id": call.id, "content": _dump(result)})
+
+                # Deterministic steps the code takes itself, each saving an LLM round trip.
+                if self.state.confirmed and self.state.last_search is None:
+                    result = self._run("search_listings", {}, ctx, timings, auto=True)
+                    messages += [{"role": "assistant", "content": "", "tool_calls": [{"id": "auto_search", "type": "function",
+                                  "function": {"name": "search_listings", "arguments": "{}"}}]},
+                                 {"role": "tool", "tool_call_id": "auto_search", "content": _dump(result)}]
+                    lookup = True
+                elif self._should_read_back(ctx):
+                    self._run("read_back_profile", {}, ctx, timings, auto=True)
+                    final = {"reply": read_back_text(self.state.profile), "asking_for": [], "shortlist": []}
                     break
+
+                if pending:
+                    call_id, args = pending
+                    problem = ("respond only after you have seen the search/lookup results" if lookup
+                               else self._validate_respond(args, ctx))
+                    if not problem:
+                        final = args
+                        break
+                    self._reject(messages, ctx, call_id, args, problem)
         except RateLimited:
             raise
         except LLMError as e:
@@ -167,6 +197,26 @@ class Agent:
         if fallback:
             final = {"reply": FALLBACK_REPLY, "asking_for": [], "shortlist": []}
         return self._finish(final, ctx, timings, t0, fallback, error)
+
+    def _run(self, name: str, args: dict, ctx: TurnContext, timings: TurnTimings, auto: bool = False) -> dict:
+        t = time.perf_counter()
+        result = run_tool(name, args, self.state, ctx)
+        ms = (time.perf_counter() - t) * 1000
+        timings.tool_ms += ms
+        ctx.tool_log.append({"name": name, "args": args, "result": result, "ms": round(ms, 2), "turn": self.state.turn,
+                             **({"by": "code"} if auto else {})})
+        return result
+
+    def _reject(self, messages: list[dict], ctx: TurnContext, call_id: Optional[str], args: dict, problem: str) -> None:
+        ctx.tool_log.append({"name": "respond_rejected", "args": args, "result": {"error": problem}, "ms": 0, "turn": self.state.turn})
+        if call_id:
+            messages.append({"role": "tool", "tool_call_id": call_id, "content": _dump({"error": problem})})
+        else:
+            messages.append({"role": "user", "content": f"(system) Call the respond tool. Problem: {problem}"})
+
+    def _should_read_back(self, ctx: TurnContext) -> bool:
+        s = self.state
+        return not s.profile.missing_required() and not s.confirmed and not s.awaiting_confirmation and not ctx.conflicts
 
     # -- validation of the terminal `respond` call -----------------------------
     def _validate_respond(self, args: dict, ctx: TurnContext) -> Optional[str]:
@@ -203,8 +253,6 @@ class Agent:
             return "no_match_notice is only for a search that returned nothing"
         if s.confirmed and s.last_search is None:
             return "the renter confirmed: call search_listings before responding"
-        if not s.profile.missing_required() and not s.confirmed and not s.awaiting_confirmation and not asking:
-            return "all required fields are filled but not confirmed: call read_back_profile, then read the profile back and ask them to confirm"
         return None
 
     # -- output ------------------------------------------------------------

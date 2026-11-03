@@ -17,8 +17,8 @@ def test_eleven_cases_with_unique_ids():
 
 def test_perfect_agent_passes_case_07():
     llm = FakeLLM([
-        [("update_profile", {"changes": FULL, "change_kinds": dict.fromkeys(FULL, "new")})], [("read_back_profile", {})], [respond("Confirm 2 BHK Sector 56?")],
-        [("confirm_profile", {"renter_quote": "Yes, that's right."})], [("search_listings", {})],
+        [("update_profile", {"changes": FULL, "change_kinds": dict.fromkeys(FULL, "new")})],  # code reads back
+        [("confirm_profile", {"renter_quote": "Yes, that's right."})],  # code searches
         [respond("Here is the best match.", shortlist=[{"listing_id": "L021", "tradeoff": "Fits your budget."}])],
     ])
     case = CASES["07_everything_in_one_sentence"]
@@ -30,8 +30,8 @@ def test_no_match_case_passes_only_when_agent_says_so():
     case = CASES["05_no_match"]
     changes = {"budget_max": 20000, "areas": ["Sector 54"], "bhk": [4], "move_in_date": "2026-12-01", "commute_destination": "Cyber City"}
     llm = FakeLLM([
-        [("update_profile", {"changes": changes, "change_kinds": dict.fromkeys(changes, "new")})], [("read_back_profile", {})], [respond("Confirm?")],
-        [("confirm_profile", {"renter_quote": "Yes, that's right."})], [("search_listings", {})],
+        [("update_profile", {"changes": changes, "change_kinds": dict.fromkeys(changes, "new")})],
+        [("confirm_profile", {"renter_quote": "Yes, that's right."})],
         [respond("Nothing matches that, sorry.", no_match=True)],
     ])
     assert not any(run_checks(case, play(case, llm)).values())
