@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import statistics
 import time
 from collections import Counter
@@ -21,9 +22,19 @@ from app.agent import Agent  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.llm import GroqClient, LLMError, RateLimited  # noqa: E402
 
-from .checks import CHECKS, TurnRecord, run_checks  # noqa: E402
+from .checks import TurnRecord, run_checks  # noqa: E402
 
 CASES_DIR = Path(__file__).parent / "cases"
+RAW_DIR = Path(__file__).parent / "raw"
+ROOT = Path(__file__).parent.parent
+
+
+def git_state() -> tuple[str, bool]:
+    """(HEAD sha, dirty) for the code under test. Eval outputs (evals/raw, evals/results.md) do not count as dirty."""
+    git = lambda *a: subprocess.run(["git", *a], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+    sha = git("rev-parse", "HEAD") or "not recorded"
+    dirty = bool(git("status", "--porcelain", "--", ".", ":(exclude)evals/raw", ":(exclude)evals/results.md"))
+    return sha, dirty
 NUDGE = "Sure, please go ahead."
 MAX_NUDGES = 2
 
@@ -31,10 +42,13 @@ MAX_NUDGES = 2
 class CountingLLM:
     def __init__(self, inner) -> None:
         self.inner, self.tokens, self.calls, self.retries = inner, 0, 0, 0
+        self.prompt_tokens = self.completion_tokens = 0
 
     def chat(self, messages, tools):
         resp = self.inner.chat(messages, tools)
         self.tokens += resp.total_tokens
+        self.prompt_tokens += resp.prompt_tokens
+        self.completion_tokens += resp.completion_tokens
         self.calls += 1
         self.retries += resp.retries
         return resp
@@ -62,7 +76,7 @@ def play(case: dict, llm) -> list[TurnRecord]:
     return records
 
 
-def run_once(case: dict, client) -> dict:
+def run_once(case: dict, client, commit: str, dirty: bool) -> dict:
     llm = CountingLLM(client)
     started = time.perf_counter()
     turns: list[TurnRecord] = []
@@ -75,7 +89,7 @@ def run_once(case: dict, client) -> dict:
         checks, status, note = {}, "RATE_LIMITED", str(e)[:200]
     except LLMError as e:
         checks, status, note = {}, "ERROR", str(e)[:200]
-    return {"case": case["id"], "status": status, "note": note, "checks": checks, "tokens": llm.tokens,
+    return {"case": case["id"], "model": client.model, "commit": commit, "dirty": dirty, "status": status, "note": note, "checks": checks, "tokens": llm.tokens, "prompt_tokens": llm.prompt_tokens, "completion_tokens": llm.completion_tokens,
             "llm_calls": llm.calls, "seconds": round(time.perf_counter() - started, 1),
             "turn_timings": [t.result.timings.to_dict() for t in turns],
             "transcript": [{"script_idx": t.script_idx, "user": t.user, "reply": t.result.display_text,
@@ -84,91 +98,33 @@ def run_once(case: dict, client) -> dict:
                            for t in turns]}
 
 
-def pct(values: list[float], q: float) -> float:
-    s = sorted(values)
-    return s[min(len(s) - 1, int(round(q * (len(s) - 1))))] if s else 0.0
-
-
-def summarise(results: list[dict], cases: list[dict], runs: int, model: str) -> str:
-    by_case: dict[str, list[dict]] = {c["id"]: [r for r in results if r["case"] == c["id"]] for c in cases}
-    lines = [f"# Eval results", "",
-             f"- Model: `{model}` · {runs} run(s) per case · generated {datetime.now():%Y-%m-%d %H:%M}",
-             *(["- **1 run per case; 3 planned, limited by Groq free-tier caps.**"] if runs == 1 else []),
-             "- Data is SYNTHETIC. Checks are deterministic (tool log, structured fields, dataset); no LLM judge.",
-             "- `RATE_LIMITED` runs (Groq 429 outlasted retries) are excluded from pass rates and listed separately; `ERROR` runs count as failures.", "",
-             "| Case | Pass rate | Rate-limited | Most common failing checks |", "|---|---|---|---|"]
-    tot_pass = tot_real = tot_rl = 0
-    for cid, rs in by_case.items():
-        real = [r for r in rs if r["status"] != "RATE_LIMITED"]
-        passed = sum(r["status"] == "PASS" for r in real)
-        rl = len(rs) - len(real)
-        failing = Counter(name for r in real for name, f in r["checks"].items() if f)
-        if any(r["status"] == "ERROR" for r in real):
-            failing["api_error"] = sum(r["status"] == "ERROR" for r in real)
-        fail_txt = ", ".join(f"{n} ×{c}" for n, c in failing.most_common(3)) or "—"
-        rate = f"{passed}/{len(real)}" if real else "n/a"
-        lines.append(f"| {cid} | {rate} | {rl} | {fail_txt} |")
-        tot_pass, tot_real, tot_rl = tot_pass + passed, tot_real + len(real), tot_rl + rl
-    overall = f"{tot_pass}/{tot_real} runs passed ({100 * tot_pass / tot_real:.0f}%)" if tot_real else "no completed runs"
-    lines += ["", f"**Overall: {overall}; {tot_rl} rate-limited run(s) excluded.**", ""]
-
-    lines += ["## Per-check pass rate (completed runs)", "", "| Check | Passed |", "|---|---|"]
-    done = [r for r in results if r["status"] in ("PASS", "FAIL")]
-    for name in CHECKS:
-        lines.append(f"| {name} | {sum(not r['checks'][name] for r in done)}/{len(done)} |")
-
-    totals = [t["total_ms"] for r in done for t in r["turn_timings"]]
-    llm_ms = [t["llm_ms"] for r in done for t in r["turn_timings"]]
-    if totals:
-        lines += ["", "## Agent latency per turn (text mode, no STT/TTS)", "", "| | p50 | p95 |", "|---|---|---|",
-                  f"| LLM time | {pct(llm_ms, .5):.0f} ms | {pct(llm_ms, .95):.0f} ms |",
-                  f"| Turn total | {pct(totals, .5):.0f} ms | {pct(totals, .95):.0f} ms |",
-                  f"| Mean LLM calls/turn | {statistics.mean(t['llm_calls'] for r in done for t in r['turn_timings']):.1f} | |"]
-    lines += ["", f"Tokens used: {sum(r['tokens'] for r in results):,} across {sum(r['llm_calls'] for r in results)} LLM calls."]
-
-    bad = [r for r in results if r["status"] in ("FAIL", "ERROR")]
-    if bad:
-        lines += ["", "## Failures (first failing run per case)", ""]
-        seen = set()
-        for r in bad:
-            if r["case"] in seen:
-                continue
-            seen.add(r["case"])
-            lines.append(f"### {r['case']}" + (f" — {r['status']}: {r['note']}" if r["note"] else ""))
-            for name, fs in r["checks"].items():
-                for f in fs:
-                    lines.append(f"- **{name}**: {f}")
-            lines.append("")
-    rl_runs = [r for r in results if r["status"] == "RATE_LIMITED"]
-    if rl_runs:
-        lines += ["## Rate-limited runs", ""] + [f"- {r['case']}: {r['note']}" for r in rl_runs]
-    return "\n".join(lines) + "\n"
-
-
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--runs", type=int, default=1, help="runs per case (3 were planned; 1 is what Groq free-tier caps allow)")
     ap.add_argument("--cases", help="comma-separated substrings of case ids")
-    ap.add_argument("--out", default=str(Path(__file__).parent / "results.md"))
     args = ap.parse_args()
 
     cases = load_cases(args.cases)
     client = GroqClient()
-    results: list[dict] = []
-    run_dir = Path(__file__).parent / "runs" / datetime.now().strftime("%Y%m%d-%H%M%S")
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    run_dir = Path(__file__).parent / "runs" / stamp  # per-run files, written as each run finishes
+    raw_path = RAW_DIR / f"{stamp}.json"  # one file for the whole pass: input to `python -m evals.report`
     run_dir.mkdir(parents=True, exist_ok=True)
-    print(f"{len(cases)} case(s) x {args.runs} run(s), model {client.model}\n")
+    RAW_DIR.mkdir(exist_ok=True)
+    commit, dirty = git_state()
+    results: list[dict] = []
+    print(f"{len(cases)} case(s) x {args.runs} run(s), model {client.model}, commit {commit[:7]}{' (dirty tree)' if dirty else ''}\n")
     for case in cases:
         for n in range(1, args.runs + 1):
-            r = run_once(case, client)
+            r = run_once(case, client, commit, dirty)
             results.append(r)
             (run_dir / f"{case['id']}_{n}.json").write_text(json.dumps(r, indent=2, ensure_ascii=False), encoding="utf-8")
+            raw_path.write_text(json.dumps({"model": client.model, "commit": commit, "dirty": dirty, "runs": args.runs,
+                                            "generated": stamp, "results": results},
+                                           indent=2, ensure_ascii=False), encoding="utf-8")
             failing = [name for name, f in r["checks"].items() if f]
             print(f"  {case['id']:<32} run {n}: {r['status']:<12} {r['seconds']:>5}s {r['tokens']:>7} tok  {','.join(failing) or r['note']}")
-    report = summarise(results, cases, args.runs, client.model)
-    Path(args.out).write_text(report, encoding="utf-8")
-    print("\n" + report)
-    print(f"transcripts: {run_dir}\nwritten: {args.out}")
+    print(f"\nraw results: {raw_path}\nrender with: python -m evals.report {raw_path.relative_to(Path.cwd()) if raw_path.is_relative_to(Path.cwd()) else raw_path}")
 
 
 if __name__ == "__main__":

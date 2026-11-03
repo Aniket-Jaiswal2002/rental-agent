@@ -42,6 +42,8 @@ class LLMResponse:
     elapsed_ms: float = 0.0
     retries: int = 0
     total_tokens: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
 
 
 class LLMClient(Protocol):
@@ -159,6 +161,7 @@ class GroqClient:
     @staticmethod
     def _parse(data: dict, elapsed_ms: float, retries: int) -> LLMResponse:
         msg = data["choices"][0]["message"]
+        usage = data.get("usage") or {}
         calls = []
         for tc in msg.get("tool_calls") or []:
             raw_args = tc["function"].get("arguments") or "{}"
@@ -172,4 +175,5 @@ class GroqClient:
             assistant["tool_calls"] = msg["tool_calls"]
         return LLMResponse(content=msg.get("content") or "", tool_calls=calls, raw_message=assistant,
                            elapsed_ms=elapsed_ms, retries=retries,
-                           total_tokens=(data.get("usage") or {}).get("total_tokens", 0))
+                           total_tokens=usage.get("total_tokens", 0), prompt_tokens=usage.get("prompt_tokens", 0),
+                           completion_tokens=usage.get("completion_tokens", 0))
