@@ -29,6 +29,15 @@ RAW_DIR = Path(__file__).parent / "raw"
 ROOT = Path(__file__).parent.parent
 
 
+def same_code(a: str, b: str) -> bool:
+    """True if commits a and b differ at most in eval outputs (so committing results between windows is fine)."""
+    if a == b:
+        return True
+    diff = subprocess.run(["git", "diff", "--quiet", a, b, "--", ".", ":(exclude)evals/raw", ":(exclude)evals/results.md"],
+                          cwd=ROOT, capture_output=True)
+    return diff.returncode == 0
+
+
 def git_state() -> tuple[str, bool]:
     """(HEAD sha, dirty) for the code under test. Eval outputs (evals/raw, evals/results.md) do not count as dirty."""
     git = lambda *a: subprocess.run(["git", *a], cwd=ROOT, capture_output=True, text=True).stdout.strip()
@@ -99,32 +108,67 @@ def run_once(case: dict, client, commit: str, dirty: bool) -> dict:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(description="Run the eval pass. When Groq's quota runs out the pass stops cleanly; "
+                                             "resume it later on the same commit with --resume.")
     ap.add_argument("--runs", type=int, default=1, help="runs per case (3 were planned; 1 is what Groq free-tier caps allow)")
     ap.add_argument("--cases", help="comma-separated substrings of case ids")
+    ap.add_argument("--resume", nargs="?", const="latest", metavar="RAW_FILE",
+                    help="continue an unfinished pass (default: the newest raw file) with its remaining cases")
     args = ap.parse_args()
 
-    cases = load_cases(args.cases)
     client = GroqClient()
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    run_dir = Path(__file__).parent / "runs" / stamp  # per-run files, written as each run finishes
-    raw_path = RAW_DIR / f"{stamp}.json"  # one file for the whole pass: input to `python -m evals.report`
-    run_dir.mkdir(parents=True, exist_ok=True)
-    RAW_DIR.mkdir(exist_ok=True)
     commit, dirty = git_state()
-    results: list[dict] = []
-    print(f"{len(cases)} case(s) x {args.runs} run(s), model {client.model}, commit {commit[:7]}{' (dirty tree)' if dirty else ''}\n")
+    RAW_DIR.mkdir(exist_ok=True)
+    if args.resume:
+        raw_path = max(RAW_DIR.glob("*.json")) if args.resume == "latest" else Path(args.resume)
+        raw = json.loads(raw_path.read_text(encoding="utf-8"))
+        problem = (
+            "this pass already finished" if raw.get("complete") else
+            f"pass was recorded on a dirty tree; start a fresh pass instead" if raw["dirty"] else
+            f"working tree is dirty; commit or stash first" if dirty else
+            f"code changed since {raw['commit'][:7]} (HEAD {commit[:7]})" if not same_code(raw["commit"], commit) else
+            f"model is {client.model} but the pass used {raw['model']}" if client.model != raw["model"] else None
+        )
+        if problem:
+            raise SystemExit(f"cannot resume {raw_path.name}: {problem}")
+        commit = raw["commit"]  # identical code (checked above): keep the pass on one commit
+        cases = [c for c in load_cases(None) if c["id"] in raw["pending"]]
+        raw["windows"].append(datetime.now().strftime("%Y%m%d-%H%M%S"))
+    else:
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        raw_path = RAW_DIR / f"{stamp}.json"  # one file per pass: input to `python -m evals.report`
+        cases = load_cases(args.cases)
+        raw = {"model": client.model, "commit": commit, "dirty": dirty, "runs": args.runs, "generated": stamp,
+               "windows": [stamp], "complete": False, "pending": [c["id"] for c in cases], "results": []}
+        if dirty:
+            print("WARNING: working tree is dirty; this pass cannot be resumed and is not reproducible.\n")
+    run_dir = Path(__file__).parent / "runs" / raw["generated"]  # per-run debug copies
+    run_dir.mkdir(parents=True, exist_ok=True)
+    save = lambda: raw_path.write_text(json.dumps(raw, indent=2, ensure_ascii=False), encoding="utf-8")
+    save()
+
+    print(f"{len(cases)} case(s) x {raw['runs']} run(s), model {client.model}, commit {commit[:7]}"
+          f"{' (dirty tree)' if dirty else ''} -> {raw_path}\n")
     for case in cases:
-        for n in range(1, args.runs + 1):
+        case_results = []
+        for n in range(1, raw["runs"] + 1):
             r = run_once(case, client, commit, dirty)
-            results.append(r)
+            if r["status"] == "RATE_LIMITED":
+                # Quota window exhausted: drop this case's partial runs and stop; it stays pending.
+                print(f"  {case['id']:<32} run {n}: quota exhausted ({r['note'][:80]})")
+                print(f"\nStopped cleanly. {len(raw['pending'])} case(s) left: {', '.join(raw['pending'])}")
+                print(f"Resume in the next quota window (same commit):  python -m evals.run --resume {raw_path.as_posix()}")
+                raise SystemExit(3)
+            case_results.append(r)
             (run_dir / f"{case['id']}_{n}.json").write_text(json.dumps(r, indent=2, ensure_ascii=False), encoding="utf-8")
-            raw_path.write_text(json.dumps({"model": client.model, "commit": commit, "dirty": dirty, "runs": args.runs,
-                                            "generated": stamp, "results": results},
-                                           indent=2, ensure_ascii=False), encoding="utf-8")
             failing = [name for name, f in r["checks"].items() if f]
             print(f"  {case['id']:<32} run {n}: {r['status']:<12} {r['seconds']:>5}s {r['tokens']:>7} tok  {','.join(failing) or r['note']}")
-    print(f"\nraw results: {raw_path}\nrender with: python -m evals.report {raw_path.relative_to(Path.cwd()) if raw_path.is_relative_to(Path.cwd()) else raw_path}")
+        raw["results"] += case_results
+        raw["pending"].remove(case["id"])
+        save()
+    raw["complete"] = True
+    save()
+    print(f"\nPass complete: {raw_path}\nRender with: python -m evals.report {raw_path.as_posix()}")
 
 
 if __name__ == "__main__":
