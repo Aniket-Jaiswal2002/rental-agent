@@ -73,7 +73,7 @@ def test_listing_not_in_latest_results_cannot_be_cited():
 
 
 def test_search_before_confirmation_is_refused():
-    a = Agent(FakeLLM([[("update_profile", {"changes": FULL})], [("search_listings", {})],
+    a = Agent(FakeLLM([[upd(FULL, dict.fromkeys(FULL, "new"))], [("search_listings", {})],
                        [("read_back_profile", {})], [respond("Please confirm: 2 BHK...")]]))
     r = a.turn("2 BHK Sector 56 30k 1 Dec Cyber City")
     searches = [t for t in r.tool_log if t["name"] == "search_listings"]
@@ -83,7 +83,7 @@ def test_search_before_confirmation_is_refused():
 
 def test_no_match_requires_notice_and_empty_shortlist():
     a = awaiting_agent([
-        [("update_profile", {"changes": {"bhk": [4], "budget_max": 20000, "areas": ["Sector 54"]}})],
+        [upd({"bhk": [4], "budget_max": 20000, "areas": ["Sector 54"]}, dict.fromkeys(["bhk", "budget_max", "areas"], "correction"))],
         [("read_back_profile", {})],
         [respond("Please confirm.")],
     ])
@@ -99,33 +99,80 @@ def test_no_match_requires_notice_and_empty_shortlist():
     assert any("error" in m for m in tool_results(a, 6))  # the forced match was bounced back to the model
 
 
-def test_contradiction_before_read_back_is_not_applied():
+def upd(changes, kinds):
+    return ("update_profile", {"changes": changes, "change_kinds": kinds})
+
+
+def test_conflict_is_not_applied_and_agent_must_ask():
     a = Agent(FakeLLM([
-        [("update_profile", {"changes": {"budget_max": 30000, "bhk": [2]}})], [respond("When?", asking_for=["move_in_date"])],
-        [("update_profile", {"changes": {"budget_max": 20000, "move_in_date": "2026-12-01"}})],
-        [respond("Which budget is right, 30000 or 20000?", asking_for=["budget_max"])],
+        [upd({"budget_max": 30000, "bhk": [2]}, {"budget_max": "new", "bhk": "new"})], [respond("When?", asking_for=["move_in_date"])],
+        [upd({"budget_max": 20000, "move_in_date": "2026-12-01"}, {"budget_max": "conflict", "move_in_date": "new"})],
+        [respond("All set!")],  # rejected: must ask about the conflicted budget
+        [respond("Is your budget 30000 or 20000?", asking_for=["budget_max"])],
     ]))
     a.turn("2 BHK, budget is 30000")
     r = a.turn("My budget is 20000, moving 1 December")
     assert r.state["profile"]["budget_max"] == 30000 and r.state["profile"]["move_in_date"] == "2026-12-01"
-    assert "conflicts" in r.tool_log[0]["result"] and r.asking_for == ["budget_max"]
+    assert r.tool_log[0]["result"]["not_applied_conflicts"] == ["budget_max"]
+    assert any(c["name"] == "respond_rejected" for c in r.tool_log)
+    assert r.asking_for == ["budget_max"] and r.updates == []
 
 
-def test_correction_cue_allows_overwrite_before_read_back():
+def test_conflict_blocks_read_back_in_the_same_turn():
     a = Agent(FakeLLM([
-        [("update_profile", {"changes": {"budget_max": 30000}})], [respond("ok", asking_for=["bhk"])],
-        [("update_profile", {"changes": {"budget_max": 20000}})], [respond("Updated.", asking_for=["bhk"])],
+        [upd({"budget_max": 30000, "areas": ["Sector 56"], "bhk": [2], "move_in_date": "2026-12-01", "commute_destination": "Cyber City"},
+             dict.fromkeys(["budget_max", "areas", "bhk", "move_in_date", "commute_destination"], "new"))],
+        [respond("Which budget?", asking_for=["budget_max"])],
+        [upd({"budget_max": 20000}, {"budget_max": "conflict"})], [("read_back_profile", {})],
+        [respond("Which budget, 30000 or 20000?", asking_for=["budget_max"])],
+    ]))
+    a.turn("everything, budget 30000")
+    r = a.turn("budget is 20000")
+    read_back = next(c for c in r.tool_log if c["name"] == "read_back_profile")
+    assert "error" in read_back["result"] and not r.state["awaiting_confirmation"]
+
+
+def test_english_correction_is_applied_and_announced_old_to_new():
+    a = Agent(FakeLLM([
+        [upd({"budget_max": 30000}, {"budget_max": "new"})], [respond("ok", asking_for=["bhk"])],
+        [upd({"budget_max": 35000}, {"budget_max": "correction"})], [respond("Got it.", asking_for=["bhk"])],
     ]))
     a.turn("budget 30000")
-    r = a.turn("Sorry, make it 20000")
-    assert r.state["profile"]["budget_max"] == 20000
+    r = a.turn("Actually make it 35k")
+    assert r.state["profile"]["budget_max"] == 35000
+    assert r.updates == ["Updated budget max: ₹30,000 -> ₹35,000."]
+    assert r.display_text.startswith(r.updates[0])
+    assert r.state["changelog"][-1]["kind"] == "correction"
 
+
+def test_hinglish_correction_nahi_35_kar_do():
+    a = Agent(FakeLLM([
+        [upd({"budget_max": 30000}, {"budget_max": "new"})], [respond("ok", asking_for=["bhk"])],
+        [upd({"budget_max": 35000}, {"budget_max": "correction"})], [respond("Noted.", asking_for=["bhk"])],
+    ]))
+    a.turn("budget tees hazaar")
+    r = a.turn("nahi, 35 kar do")
+    assert r.state["profile"]["budget_max"] == 35000 and r.updates == ["Updated budget max: ₹30,000 -> ₹35,000."]
+
+
+def test_overwrite_mislabelled_new_is_rejected_atomically():
+    a = Agent(FakeLLM([
+        [upd({"budget_max": 30000}, {"budget_max": "new"})], [respond("ok", asking_for=["bhk"])],
+        [upd({"budget_max": 20000, "bhk": [2]}, {"budget_max": "new", "bhk": "new"})],
+        [upd({"budget_max": 20000, "bhk": [2]}, {"budget_max": "conflict", "bhk": "new"})],
+        [respond("Which budget?", asking_for=["budget_max"])],
+    ]))
+    a.turn("budget 30000")
+    r = a.turn("budget 20000, 2 bhk")
+    assert "already holds" in r.tool_log[0]["result"]["error"]
+    assert r.tool_log[0]["result"].get("applied") is None  # nothing applied by the bad call
+    assert r.state["profile"]["budget_max"] == 30000 and r.state["profile"]["bhk"] == [2]
 
 def test_changing_budget_after_confirmation_resets_and_requires_new_read_back():
     a = awaiting_agent([
         [("confirm_profile", {"renter_quote": "yes"})], [("search_listings", {})],
         [respond(shortlist=[{"listing_id": "L021", "tradeoff": "ok"}])],
-        [("update_profile", {"changes": {"budget_max": 40000}})],
+        [upd({"budget_max": 40000}, {"budget_max": "correction"})],
         [respond("Updated to 40,000.")],  # rejected: complete + unconfirmed + not asking anything
         [("read_back_profile", {})],
         [respond("Updated budget to 40,000. Shall I go ahead with that?")],

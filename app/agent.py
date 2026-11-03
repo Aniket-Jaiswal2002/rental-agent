@@ -30,7 +30,7 @@ STYLE
 MEMORY
 - Your memory is the PROFILE in the state block below, not the chat history. Call update_profile whenever the renter gives or changes any detail. When they change something, say so ("Updated your budget to 35,000").
 - Never assume or infer a value the renter did not state. Optional fields (furnishing, pets, tenant_type, parking) stay null unless the renter explicitly says them: "family" or "bachelor" must be said in so many words, never guessed from other details.
-- If update_profile returns `conflicts`, those values were NOT applied: the renter contradicted themselves. Ask which one is right, with those fields in asking_for, and in the same reply also ask for any required field that is still missing. Do not read the profile back until the conflict is resolved.
+- Every field you pass to update_profile needs a change_kind. "new": the field was empty (or a list gains entries). "correction": the renter clearly replaces a stored value ("actually make it 35k", "nahi, 35 kar do", "sorry I meant Sector 56"); once you have read the profile back, a changed value from the renter is a correction. "conflict": two incompatible values in one turn, or a value that contradicts a stored one with no sign they are replacing it, so you cannot tell which is meant. A conflict is NOT applied: ask ONE short clarifying question about it with that field in asking_for (and also ask for any required field that is still missing). Do not read the profile back until the conflict is resolved. The app announces corrections itself ("Updated budget: 30,000 -> 35,000"), so just continue naturally.
 - Dates: resolve to ISO YYYY-MM-DD using today's date. Area names: use the canonical names listed in the state block when the renter's words match one; otherwise store what they said.
 
 FLOW
@@ -53,6 +53,18 @@ Every turn must end with a call to respond.
 """
 
 
+def _fmt(field: str, v) -> str:
+    if v in (None, [], ""):
+        return "none"
+    if field == "budget_max":
+        return f"₹{int(v):,}"
+    return ", ".join(map(str, v)) if isinstance(v, list) else str(v)
+
+
+def _announce(change: dict) -> str:
+    field = change["field"]
+    return f"Updated {field.replace('_', ' ')}: {_fmt(field, change['old'])} -> {_fmt(field, change['new'])}."
+
 def _as_json_object(text: str) -> Optional[dict]:
     try:
         obj = json.loads(text)
@@ -64,6 +76,7 @@ def _as_json_object(text: str) -> Optional[dict]:
 @dataclass
 class TurnResult:
     reply: str
+    updates: list[str]  # corrections announced by the app, rendered from the changelog (old -> new)
     asking_for: list[str]
     shortlist: list[dict]  # rendered from listings.json
     no_match: bool
@@ -178,6 +191,9 @@ class Agent:
         shortlist = args.get("shortlist")
         if not isinstance(shortlist, list) or len(shortlist) > 3:
             return "shortlist must be a list of at most 3 items"
+        unresolved = [f for f in ctx.conflicts if f not in asking]
+        if unresolved:
+            return f"the renter contradicted themselves on {unresolved}: ask which is right and put it in asking_for"
         citable = ctx.citable_ids(s)
         seen = set()
         for item in shortlist:
@@ -207,7 +223,8 @@ class Agent:
     def _finish(self, final: dict, ctx: TurnContext, timings: TurnTimings, t0: float, fallback: bool, error: Optional[str]) -> TurnResult:
         shortlist = [listings.render(str(i["listing_id"]).strip().upper(), i["tradeoff"].strip()) for i in final["shortlist"]]
         no_match = bool(final.get("no_match_notice"))
-        display = final["reply"].strip()
+        updates = [_announce(c) for c in ctx.changes if c.get("kind") == "correction"]
+        display = "\n".join([*updates, final["reply"].strip()])
         if shortlist:
             display += "\n" + "\n".join(f"  {listings.format_card(r)}" for r in shortlist)
         timings.total_ms = (time.perf_counter() - t0) * 1000
@@ -216,7 +233,7 @@ class Agent:
         self.history += [{"role": "user", "content": ctx.user_message},
                          {"role": "assistant", "content": final["reply"].strip() + shown}]
         return TurnResult(
-            reply=final["reply"].strip(), asking_for=list(final["asking_for"]), shortlist=shortlist,
+            reply=final["reply"].strip(), updates=updates, asking_for=list(final["asking_for"]), shortlist=shortlist,
             no_match=no_match, display_text=display, state=self.state.snapshot(), changes=ctx.changes,
             tool_log=ctx.tool_log, timings=timings, fallback=fallback, error=error,
         )

@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from . import listings
-from .profile import ALL_FIELDS, ProfileError, SessionState, has_correction_cue, split_conflicts
+from .profile import ALL_FIELDS, ProfileError, SessionState, plan_update
 
 _NULLABLE = lambda t: {"type": [t, "null"]}
 
@@ -14,8 +14,10 @@ TOOLS = [
         "name": "update_profile",
         "description": (
             "Record what the renter just told you. Pass only the fields that changed this turn, with their FULL new "
-            "value (e.g. areas replaces the whole list). Use null to clear a field. Call this before replying whenever "
-            "the renter gives or changes any detail."
+            "value (e.g. areas replaces the whole list), and a change_kind for EACH field: \"new\" (field was empty, or a list "
+            "gains entries), \"correction\" (renter clearly replaces a stored value, e.g. \"actually make it 35k\", \"nahi, 35 kar do\", "
+            "\"sorry I meant Sector 56\"), or \"conflict\" (renter gave two incompatible values in one turn, or a value that "
+            "contradicts a stored one and it is unclear which is meant: NOT applied, you must ask). Use null to clear a field."
         ),
         "parameters": {"type": "object", "additionalProperties": False, "properties": {
             "changes": {"type": "object", "additionalProperties": False, "properties": {
@@ -29,7 +31,10 @@ TOOLS = [
                 "pets": _NULLABLE("boolean"),
                 "tenant_type": {"enum": ["family", "bachelor", None]},
                 "parking": _NULLABLE("boolean"),
-            }}}, "required": ["changes"]}}},
+            }},
+            "change_kinds": {"type": "object", "description": "field name -> \"new\" | \"correction\" | \"conflict\", one entry per field in changes",
+                             "additionalProperties": {"enum": ["new", "correction", "conflict"]}},
+        }, "required": ["changes", "change_kinds"]}}},
     {"type": "function", "function": {
         "name": "read_back_profile",
         "description": (
@@ -84,6 +89,7 @@ class TurnContext:
     searched: list[dict] = field(default_factory=list)  # search results produced this turn
     fetched_ids: set[str] = field(default_factory=set)  # get_listing hits this turn
     changes: list[dict] = field(default_factory=list)
+    conflicts: list[str] = field(default_factory=list)  # fields the renter contradicted this turn (not applied)
 
     def citable_ids(self, state: SessionState) -> set[str]:
         ids = set(self.fetched_ids)
@@ -102,20 +108,25 @@ def run_tool(name: str, args: dict[str, Any], state: SessionState, ctx: TurnCont
             changes = args.get("changes")
             if not isinstance(changes, dict) or not changes:
                 raise ProfileError("changes must be a non-empty object")
-            conflicts: dict = {}
-            if not state.ever_read_back and not has_correction_cue(ctx.user_message):
-                # Before the first read-back, a different value with no correction cue is a contradiction: don't pick a side.
-                changes, conflicts = split_conflicts(state.profile, changes)
-            log = state.update_profile(changes) if changes else []
-            ctx.changes += [{**e, "turn": state.turn} for e in log]
-            out = {"applied": log, "unchanged": not log, "missing_required": state.profile.missing_required(),
+            kinds = args.get("change_kinds")
+            if not isinstance(kinds, dict):
+                raise ProfileError("change_kinds is required: one of new/correction/conflict for every field in changes")
+            plan = plan_update(state.profile, changes, kinds)
+            if plan.errors:
+                raise ProfileError("; ".join(plan.errors))  # atomic: nothing applied
+            log = state.update_profile(plan.apply, plan.kinds) if plan.apply else []
+            ctx.changes += [{**e, "kind": plan.kinds.get(e["field"], "new"), "turn": state.turn} for e in log]
+            ctx.conflicts += [f for f in plan.conflicts if f not in ctx.conflicts]
+            out = {"applied": log, "unchanged": not log and not plan.conflicts, "missing_required": state.profile.missing_required(),
                    "note": "confirmation reset; read the profile back again before searching" if log else ""}
-            if conflicts:
-                out["conflicts"] = {f: {"stored": getattr(state.profile, f), "renter_just_said": v} for f, v in conflicts.items()}
-                out["instruction"] = ("NOT applied: these contradict what the renter said earlier and they did not say it is a "
-                                      "correction. Ask which value is right, with those fields in asking_for.")
+            if plan.conflicts:
+                out["not_applied_conflicts"] = plan.conflicts
+                out["instruction"] = ("Ask the renter ONE clarifying question about these fields and put them in asking_for; "
+                                      "do not read the profile back until it is resolved.")
             return out
         if name == "read_back_profile":
+            if ctx.conflicts:
+                raise ProfileError(f"unresolved conflict on {ctx.conflicts}: ask the renter first")
             state.read_back()
             return {"profile": state.snapshot()["profile"], "next": "read this profile back to the renter and ask them to confirm"}
         if name == "confirm_profile":

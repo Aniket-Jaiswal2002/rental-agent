@@ -1,4 +1,4 @@
-﻿"""Settings, read from the environment (.env is loaded first)."""
+"""Settings, read from the environment (.env is loaded first)."""
 import os
 from datetime import date
 from pathlib import Path
@@ -19,8 +19,9 @@ class Settings:
     groq_api_key: str = os.getenv("GROQ_API_KEY", "")
     groq_model: str = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
     groq_rpm: int = _int("GROQ_RPM", 20)
+    groq_tpm: int = _int("GROQ_TPM", 7000)  # stay under the per-minute token cap (free tier: 8000)
     groq_max_retries: int = _int("GROQ_MAX_RETRIES", 5)
-    groq_max_wait_s: int = _int("GROQ_MAX_WAIT_S", 60)
+    groq_max_wait_s: int = _int("GROQ_MAX_WAIT_S", 900)
 
 
 settings = Settings()

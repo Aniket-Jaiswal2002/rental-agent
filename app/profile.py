@@ -71,31 +71,56 @@ def _plain(v: Any) -> Any:
     return v.isoformat() if isinstance(v, date) else v
 
 
-CORRECTION_CUES = ("actually", "sorry", "meant", "instead", "make it", "change", "wrong", "correction",
-                   "rather", "update", "no wait", "nahi", "galat", "badal")
+CHANGE_KINDS = ("new", "correction", "conflict")
 
 
-def split_conflicts(profile: RenterProfile, changes: dict[str, Any]) -> tuple[dict, dict]:
-    """Separate changes that silently overwrite a different earlier value (conflicts) from the rest.
+class UpdatePlan:
+    """What update_profile will do, decided from the model-declared change_kind of each field."""
 
-    Filling an empty field, re-stating the same value, or widening a list (areas/bhk gaining entries)
-    is not a conflict.
+    def __init__(self) -> None:
+        self.apply: dict[str, Any] = {}  # field -> value to write
+        self.kinds: dict[str, str] = {}  # field -> "new" | "correction" for applied fields
+        self.conflicts: list[str] = []  # fields NOT applied; the renter must be asked
+        self.errors: list[str] = []
+
+
+def plan_update(profile: RenterProfile, changes: dict[str, Any], kinds: dict[str, str]) -> UpdatePlan:
+    """Enforce the change_kind contract:
+
+    new        -> the field is empty (or the value only widens a list). Applied.
+    correction -> the renter replaces a stored value. Applied; the reply must say old -> new.
+    conflict   -> incompatible values or unclear which is meant. NOT applied; the agent must ask.
     """
-    ok, conflicts = {}, {}
-    for field, new in changes.items():
-        old = getattr(profile, field, None)
-        if field not in ALL_FIELDS or _is_empty(old) or new is None or new == old:
-            ok[field] = new
-        elif isinstance(old, list) and isinstance(new, list) and {str(x).lower() for x in old} <= {str(x).lower() for x in new}:
-            ok[field] = new
+    plan = UpdatePlan()
+    for field, value in changes.items():
+        kind = kinds.get(field)
+        if field not in ALL_FIELDS:
+            plan.errors.append(f"unknown profile field {field!r}")
+        elif kind not in CHANGE_KINDS:
+            plan.errors.append(f"{field}: change_kind must be one of {list(CHANGE_KINDS)}")
+        elif kind == "conflict":
+            plan.conflicts.append(field)
         else:
-            conflicts[field] = new
-    return ok, conflicts
-
-
-def has_correction_cue(message: str) -> bool:
-    return any(cue in message.lower() for cue in CORRECTION_CUES)
-
+            old = getattr(profile, field)
+            try:
+                _, log = apply_update(profile, {field: value})
+            except ProfileError as e:
+                plan.errors.append(f"{field}: {e}")
+                continue
+            if not log:
+                continue  # same value restated: nothing to do
+            widens = isinstance(old, list) and {str(x).lower() for x in old} <= {str(x).lower() for x in (value or [])}
+            if kind == "new" and not _is_empty(old) and not widens:
+                plan.errors.append(f"{field} already holds {_plain(old)!r}; if the renter is replacing it use "
+                                   f"change_kind 'correction', if it contradicts or is unclear use 'conflict'")
+            elif kind == "correction" and _is_empty(old):
+                plan.errors.append(f"{field} has no stored value to correct; use change_kind 'new'")
+            else:
+                plan.apply[field], plan.kinds[field] = value, kind
+    unknown_kinds = [f for f in kinds if f not in changes]
+    if unknown_kinds:
+        plan.errors.append(f"change_kinds names fields not in changes: {unknown_kinds}")
+    return plan
 
 class SessionState:
     """Profile + confirmation flags + the bookkeeping that makes the gate structural.
@@ -112,16 +137,15 @@ class SessionState:
         self.confirmed = False
         self.turn = 0  # renter turns so far (1-based while a turn is in flight)
         self.read_back_turn: Optional[int] = None  # assistant turn in which read-back happened
-        self.ever_read_back = False  # once the renter has seen the profile, any change they make is a correction
         self.last_search: Optional[dict] = None  # latest search_listings result
 
     # -- profile updates -------------------------------------------------
-    def update_profile(self, changes: dict[str, Any]) -> list[dict]:
+    def update_profile(self, changes: dict[str, Any], kinds: Optional[dict[str, str]] = None) -> list[dict]:
         new, log = apply_update(self.profile, changes)
         self.profile = new
         if log:
             for entry in log:
-                self.changelog.append({**entry, "turn": self.turn})
+                self.changelog.append({**entry, "kind": (kinds or {}).get(entry["field"], "new"), "turn": self.turn})
             self.awaiting_confirmation = False
             self.confirmed = False
             self.read_back_turn = None
@@ -136,7 +160,6 @@ class SessionState:
         self.awaiting_confirmation = True
         self.confirmed = False
         self.read_back_turn = self.turn
-        self.ever_read_back = True
 
     def confirm(self, renter_quote: str, last_user_message: str) -> None:
         if not self.awaiting_confirmation or self.read_back_turn is None:

@@ -49,21 +49,40 @@ class LLMClient(Protocol):
 
 
 class _Throttle:
-    """Spaces requests at least 60/rpm seconds apart (shared across threads)."""
+    """Paces outgoing requests: at least 60/rpm seconds apart, and under `tpm` tokens in any 60s window.
 
-    def __init__(self, rpm: int) -> None:
+    The token window uses the usage Groq reports for earlier calls and assumes the next call costs about
+    as much as the previous one, so we sleep *before* a request instead of retrying into a 429.
+    """
+
+    def __init__(self, rpm: int, tpm: int) -> None:
         self.interval = 60.0 / max(rpm, 1)
+        self.tpm = tpm
         self._next = 0.0
+        self._spent: list[tuple[float, int]] = []  # (monotonic time, tokens)
+        self._last_cost = 3000
         self._lock = threading.Lock()
 
     def wait(self) -> None:
         with self._lock:
+            while True:
+                now = time.monotonic()
+                self._spent = [(t, n) for t, n in self._spent if now - t < 60]
+                used = sum(n for _, n in self._spent)
+                if not self.tpm or not self._spent or used + self._last_cost <= self.tpm:
+                    break
+                time.sleep(max(0.5, 60 - (now - self._spent[0][0]) + 0.1))  # until the oldest spend leaves the window
             now = time.monotonic()
             delay = max(0.0, self._next - now)
             self._next = max(now, self._next) + self.interval
         if delay:
             time.sleep(delay)
 
+    def record(self, tokens: int) -> None:
+        if tokens:
+            with self._lock:
+                self._spent.append((time.monotonic(), tokens))
+                self._last_cost = tokens
 
 class GroqClient:
     def __init__(self, api_key: str | None = None, model: str | None = None) -> None:
@@ -71,7 +90,7 @@ class GroqClient:
         if not self.api_key:
             raise LLMError("GROQ_API_KEY is not set (copy .env.example to .env and add your key)")
         self.model = model or settings.groq_model
-        self.throttle = _Throttle(settings.groq_rpm)
+        self.throttle = _Throttle(settings.groq_rpm, settings.groq_tpm)
         self.http = httpx.Client(timeout=60)
 
     def chat(self, messages: list[dict], tools: list[dict]) -> LLMResponse:
@@ -99,7 +118,9 @@ class GroqClient:
                 err = resp.text[:300]
 
             if resp is not None and resp.status_code == 200:
-                return self._parse(resp.json(), (time.perf_counter() - started) * 1000, retries)
+                parsed = self._parse(resp.json(), (time.perf_counter() - started) * 1000, retries)
+                self.throttle.record(parsed.total_tokens)
+                return parsed
 
             status = resp.status_code if resp is not None else 0
             last_429 = status == 429

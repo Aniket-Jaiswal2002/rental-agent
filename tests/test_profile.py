@@ -48,14 +48,31 @@ def test_none_clears_a_field_and_lists():
     assert {e["field"] for e in log} == {"pets", "areas"}
 
 
-def test_split_conflicts_flags_silent_overwrites_only():
-    from app.profile import has_correction_cue, split_conflicts
+def test_plan_update_new_correction_conflict_contract():
+    from app.profile import plan_update
     p, _ = apply_update(RenterProfile(), {"budget_max": 30000, "areas": ["Sector 56"]})
-    ok, bad = split_conflicts(p, {"budget_max": 20000, "areas": ["Sector 56", "Sector 57"], "bhk": [2], "pets": True})
-    assert bad == {"budget_max": 20000}  # different value for a filled field
-    assert set(ok) == {"areas", "bhk", "pets"}  # widening a list and filling empty fields are fine
-    assert split_conflicts(p, {"budget_max": 30000})[1] == {}  # re-stating is fine
-    assert has_correction_cue("Sorry, I meant Sector 56") and not has_correction_cue("My budget is 20000")
+
+    # new: fills an empty field, or widens a list
+    plan = plan_update(p, {"bhk": [2], "areas": ["Sector 56", "Sector 57"]}, {"bhk": "new", "areas": "new"})
+    assert not plan.errors and set(plan.apply) == {"bhk", "areas"}
+
+    # correction: replaces a stored value
+    plan = plan_update(p, {"budget_max": 35000}, {"budget_max": "correction"})
+    assert not plan.errors and plan.apply == {"budget_max": 35000} and plan.kinds == {"budget_max": "correction"}
+
+    # conflict: never applied, reported for a clarifying question
+    plan = plan_update(p, {"budget_max": 20000}, {"budget_max": "conflict"})
+    assert plan.conflicts == ["budget_max"] and plan.apply == {} and not plan.errors
+
+
+def test_plan_update_rejects_mislabelled_changes():
+    from app.profile import plan_update
+    p, _ = apply_update(RenterProfile(), {"budget_max": 30000})
+    assert plan_update(p, {"budget_max": 20000}, {"budget_max": "new"}).errors  # silent overwrite labelled 'new'
+    assert plan_update(p, {"bhk": [2]}, {"bhk": "correction"}).errors  # nothing stored to correct
+    assert plan_update(p, {"bhk": [2]}, {}).errors  # missing change_kind
+    assert plan_update(p, {"bhk": [2]}, {"bhk": "maybe"}).errors  # invalid change_kind
+    assert not plan_update(p, {"budget_max": 30000}, {"budget_max": "new"}).errors  # restating is fine
 
 
 def test_missing_required():

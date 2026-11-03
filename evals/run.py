@@ -93,6 +93,7 @@ def summarise(results: list[dict], cases: list[dict], runs: int, model: str) -> 
     by_case: dict[str, list[dict]] = {c["id"]: [r for r in results if r["case"] == c["id"]] for c in cases}
     lines = [f"# Eval results", "",
              f"- Model: `{model}` · {runs} run(s) per case · generated {datetime.now():%Y-%m-%d %H:%M}",
+             *(["- **1 run per case; 3 planned, limited by Groq free-tier caps.**"] if runs == 1 else []),
              "- Data is SYNTHETIC. Checks are deterministic (tool log, structured fields, dataset); no LLM judge.",
              "- `RATE_LIMITED` runs (Groq 429 outlasted retries) are excluded from pass rates and listed separately; `ERROR` runs count as failures.", "",
              "| Case | Pass rate | Rate-limited | Most common failing checks |", "|---|---|---|---|"]
@@ -146,7 +147,7 @@ def summarise(results: list[dict], cases: list[dict], runs: int, model: str) -> 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--runs", type=int, default=3)
+    ap.add_argument("--runs", type=int, default=1, help="runs per case (3 were planned; 1 is what Groq free-tier caps allow)")
     ap.add_argument("--cases", help="comma-separated substrings of case ids")
     ap.add_argument("--out", default=str(Path(__file__).parent / "results.md"))
     args = ap.parse_args()
