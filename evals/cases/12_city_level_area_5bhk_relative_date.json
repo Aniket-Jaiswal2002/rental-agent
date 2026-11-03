@@ -1,0 +1,18 @@
+{
+  "id": "12_city_level_area_5bhk_relative_date",
+  "description": "Renter names only the city ('Gurgaon'), 5 BHK and 'within a week'. Gurgaon must not be stored as an area (the agent asks for sectors); the move-in date resolves to a real date within 7 days of the pinned eval date (2026-11-02); no listing has 5 BHK, so the agent must say so instead of forcing a match.",
+  "turns": [
+    {"say": "I want a flat in Gurgaon, 5 BHK, ready to move in within a week."},
+    {"say": "My budget is 60000 a month."},
+    {"say": "Sector 54 or Sector 56. My office is at Cyber City."},
+    {"say": "Yes, that's right.", "await_read_back": true}
+  ],
+  "expected_profile": {
+    "budget_max": 60000,
+    "areas": ["Sector 54", "Sector 56"],
+    "bhk": [5],
+    "move_in_date": {"between": ["2026-11-02", "2026-11-09"]},
+    "commute_destination": "cyber city"
+  },
+  "expect": {"min_searches": 1, "no_match": true, "asking_at_turn": {"1": ["areas"]}}
+}

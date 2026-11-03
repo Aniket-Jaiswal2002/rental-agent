@@ -24,7 +24,7 @@ TOOLS = [
             "budget_max": _NULLABLE("integer"),
             "areas": {"type": ["array", "null"], "items": {"type": "string"}},
             "bhk": {"type": ["array", "null"], "items": {"type": "integer"}},
-            "move_in_date": {**_NULLABLE("string"), "description": "YYYY-MM-DD"},
+            "move_in_date": {**_NULLABLE("string"), "description": "YYYY-MM-DD, or the renter's relative phrase as said ('within a week', 'next month'); the app resolves it"},
             "commute_destination": _NULLABLE("string"),
             "furnishing": {"enum": ["unfurnished", "semi-furnished", "fully-furnished", None]},
             "pets": _NULLABLE("boolean"),
@@ -89,6 +89,8 @@ def run_tool(name: str, args: dict[str, Any], state: SessionState, ctx: TurnCont
                    "note": "confirmation reset; read the profile back again before searching" if log else ""}
             if plan.conflicts:
                 out["not_applied_conflicts"] = plan.conflicts
+                if plan.notes:
+                    out["notes"] = plan.notes
                 out["instruction"] = ("Ask the renter ONE clarifying question about these fields and put them in asking_for; "
                                       "do not read the profile back until it is resolved.")
             return out

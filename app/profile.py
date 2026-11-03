@@ -10,6 +10,9 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from .config import today
+from .dates import resolve_date
+
 REQUIRED_FIELDS = ["budget_max", "areas", "bhk", "move_in_date", "commute_destination"]
 OPTIONAL_FIELDS = ["furnishing", "pets", "tenant_type", "parking"]
 ALL_FIELDS = REQUIRED_FIELDS + OPTIONAL_FIELDS
@@ -40,6 +43,18 @@ class ProfileError(ValueError):
     pass
 
 
+# The whole city is not a usable "area": searching it would match everything.
+CITY_LEVEL = {"gurgaon", "gurugram", "ggn", "gurgaon city", "gurugram city", "delhi ncr", "ncr", "anywhere in gurgaon"}
+
+
+def _drop_city_level(areas: list) -> list:
+    kept = [a for a in areas if " ".join(str(a).lower().split()) not in CITY_LEVEL]
+    if not kept:
+        raise ProfileError(f"{areas} is the whole city, not an area: leave areas empty and ask which sectors or "
+                           f"localities they prefer (asking_for: areas)")
+    return kept
+
+
 def apply_update(profile: RenterProfile, changes: dict[str, Any]) -> tuple[RenterProfile, list[dict]]:
     """Return (new_profile, changelog). `changes` maps field -> new value (None clears it).
 
@@ -52,6 +67,13 @@ def apply_update(profile: RenterProfile, changes: dict[str, Any]) -> tuple[Rente
     for key, value in changes.items():
         if key in ("areas", "bhk") and value is None:
             value = []
+        if key == "areas" and value:
+            value = _drop_city_level(value)
+        if key == "move_in_date" and isinstance(value, str) and value.strip():
+            resolved = resolve_date(value, today())
+            if resolved is None:
+                raise ProfileError(f"could not understand move-in date {value!r}; ask the renter for a date")
+            value = resolved
         merged[key] = value
     try:
         new = RenterProfile.model_validate(merged)
@@ -81,6 +103,7 @@ class UpdatePlan:
         self.apply: dict[str, Any] = {}  # field -> value to write
         self.kinds: dict[str, str] = {}  # field -> "new" | "correction" for applied fields
         self.conflicts: list[str] = []  # fields NOT applied; the renter must be asked
+        self.notes: list[str] = []
         self.errors: list[str] = []
 
 
@@ -100,6 +123,9 @@ def plan_update(profile: RenterProfile, changes: dict[str, Any], kinds: dict[str
             plan.errors.append(f"{field}: change_kind must be one of {list(CHANGE_KINDS)}")
         elif kind == "conflict":
             plan.conflicts.append(field)
+        elif field == "areas" and value and all(" ".join(str(a).lower().split()) in CITY_LEVEL for a in value):
+            plan.conflicts.append(field)  # not applied; the agent must ask, exactly as for a conflict
+            plan.notes.append(f"{value} is the whole city, not an area: ask which sectors or localities they prefer")
         else:
             old = getattr(profile, field)
             try:

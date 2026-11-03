@@ -74,7 +74,10 @@ def check_b(case: dict, turns: list[TurnRecord]) -> list[str]:
     fails = []
     for field in actual:
         want, got = expected.get(field), actual[field]
-        if field == "commute_destination" and want:
+        if isinstance(want, dict) and "between" in want:  # e.g. a relative move-in date: any day in the window
+            lo, hi = want["between"]
+            ok = bool(got) and lo <= got <= hi
+        elif field == "commute_destination" and want:
             ok = bool(got) and want.lower() in got.lower()
         elif isinstance(got, list) or isinstance(want, list):
             ok = _norm_list(want or []) == _norm_list(got or [])
