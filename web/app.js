@@ -9,68 +9,98 @@ const LABELS = {
   furnishing: "Furnishing", pets: "Pets", tenant_type: "Tenant type", parking: "Parking",
 };
 const REQUIRED = ["budget_max", "areas", "bhk", "move_in_date", "commute_destination"];
+const EMPTY_STATE = { profile: {}, missing_required: REQUIRED, confirmed: false, awaiting_confirmation: false, changelog: [] };
+const inr = (n) => "₹" + Number(n).toLocaleString("en-IN");
 
 function fmt(field, v) {
   if (v === null || v === undefined || (Array.isArray(v) && !v.length)) return null;
-  if (field === "budget_max") return "₹" + Number(v).toLocaleString("en-IN");
+  if (field === "budget_max") return inr(v);
   if (typeof v === "boolean") return v ? "yes" : "no";
   return Array.isArray(v) ? v.join(", ") : String(v);
 }
 
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
 function status(text) { $("status").textContent = text; }
 
-function addMessage(role, text, extra) {
-  const div = document.createElement("div");
-  div.className = "msg " + role;
-  if (extra?.updates) for (const u of extra.updates) {
-    const s = document.createElement("span"); s.className = "update"; s.textContent = u; div.append(s);
-  }
+function addMessage(role, text, r) {
+  $("transcript").querySelector(".hint")?.remove();
+  const div = el("div", "msg " + role);
+  for (const u of r?.updates || []) div.append(el("span", "update", "✎ " + u));
   div.append(document.createTextNode(text));
-  for (const c of extra?.shortlist || []) {
-    const card = document.createElement("div"); card.className = "card";
-    const title = document.createElement("b"); title.textContent = `${c.id} · ${c.title}`;
-    const facts = document.createElement("div"); facts.className = "facts";
-    facts.textContent = `₹${c.rent.toLocaleString("en-IN")}/mo · deposit ₹${c.deposit.toLocaleString("en-IN")} · ` +
-      `${c.furnishing} · from ${c.available_from} · ${c.distance_cyber_city_km} km to Cyber City`;
-    const why = document.createElement("div"); why.textContent = c.tradeoff;
-    card.append(title, facts, why); div.append(card);
+  if (r?.shortlist?.length) {
+    const cards = el("div", "cards");
+    for (const c of r.shortlist) {
+      const card = el("div", "card");
+      const top = el("div", "top");
+      top.append(el("b", "", c.title), el("span", "rent", inr(c.rent) + "/mo"));
+      card.append(top,
+        el("div", "facts", `Deposit ${inr(c.deposit)} · ${c.furnishing} · available ${c.available_from} · ` +
+          `${c.distance_cyber_city_km} km to Cyber City · ${c.distance_golf_course_road_km} km to Golf Course Rd`),
+        el("div", "why", c.tradeoff),
+        el("div", "id", `${c.id} · pets ${c.pets_allowed ? "ok" : "no"} · ${c.tenant_preference} · parking ${c.parking ? "yes" : "no"}`));
+      cards.append(card);
+    }
+    div.append(cards, el("span", "via", "Prices, areas and facts above come straight from the listings data, not the model."));
   }
+  if (r?.no_match) div.append(el("div", "nomatch", "No listing matches every requirement, so nothing is shown."));
   $("transcript").append(div);
   $("transcript").scrollTop = $("transcript").scrollHeight;
 }
 
-function renderMemory(state) {
+function renderMemory(state, askingFor = []) {
   const dl = $("profile"); dl.innerHTML = "";
   for (const [field, label] of Object.entries(LABELS)) {
     const value = fmt(field, state.profile[field]);
-    const dt = document.createElement("dt"); dt.textContent = label + (REQUIRED.includes(field) ? " *" : "");
-    const dd = document.createElement("dd");
-    dd.textContent = value ?? (REQUIRED.includes(field) ? "missing" : "—");
-    if (value === null && REQUIRED.includes(field)) dd.className = "missing";
-    if (JSON.stringify(lastProfile[field]) !== JSON.stringify(state.profile[field]) && value !== null) {
-      dd.classList.add("flash"); setTimeout(() => dd.classList.remove("flash"), 1500);
+    const req = REQUIRED.includes(field);
+    const dd = el("dd", value === null && req ? "missing" : "", value ?? (req ? "missing" : "—"));
+    if (value !== null && JSON.stringify(lastProfile[field]) !== JSON.stringify(state.profile[field])) {
+      dd.classList.add("flash");
+      requestAnimationFrame(() => requestAnimationFrame(() => dd.classList.remove("flash")));
     }
-    dl.append(dt, dd);
+    dl.append(el("dt", "", label + (req ? " *" : "")), dd);
   }
   lastProfile = state.profile;
-  $("flags").textContent = state.confirmed ? "✓ Confirmed by renter" :
-    state.awaiting_confirmation ? "Waiting for renter to confirm the read-back" :
-    state.missing_required.length ? `Missing: ${state.missing_required.map((f) => LABELS[f]).join(", ")}` : "";
+
+  const stage = $("stage");
+  stage.className = "stage" + (state.confirmed ? " confirmed" : "");
+  stage.textContent = state.confirmed ? "✓ Confirmed by renter: searching on this profile" :
+    state.awaiting_confirmation ? "Read back to renter, waiting for a yes" :
+    state.missing_required.length ? `Collecting: ${state.missing_required.length} required field(s) missing` : "Profile complete";
+
+  const asking = $("asking"); asking.innerHTML = "";
+  if (askingFor.length) {
+    asking.append("Agent is asking for ");
+    for (const f of askingFor) asking.append(el("span", "chip", LABELS[f] || f));
+  }
+
   const ol = $("changelog"); ol.innerHTML = "";
-  for (const c of state.changelog.slice(-8)) {
-    const li = document.createElement("li");
-    li.textContent = `turn ${c.turn}: ${LABELS[c.field]} ${fmt(c.field, c.old) ?? "—"} → ${fmt(c.field, c.new) ?? "—"}` +
-      (c.kind === "correction" ? " (correction)" : "");
+  for (const c of state.changelog.slice(-8).reverse()) {
+    const li = el("li", "", `turn ${c.turn}: ${LABELS[c.field]} ${fmt(c.field, c.old) ?? "—"} → ${fmt(c.field, c.new) ?? "—"}`);
+    if (c.kind === "correction") li.append(el("span", "kind", "correction"));
     ol.append(li);
   }
+  if (!state.changelog.length) ol.append(el("li", "", "nothing yet"));
 }
 
 let latency = {};
 function renderLatency() {
-  const ms = (v) => (v === null || v === undefined ? "–" : Math.round(v) + "ms");
-  const total = (latency.stt_ms || 0) + (latency.total_ms || 0) + (latency.tts_ms || 0);
-  $("latency").textContent = `last turn  STT ${ms(latency.stt_ms)} · LLM ${ms(latency.llm_ms)} (${latency.llm_calls ?? 0} calls) · ` +
-    `tools ${ms(latency.tool_ms)} · TTS start ${ms(latency.tts_ms)} · total ${ms(total)}`;
+  const box = $("latency"); box.innerHTML = "";
+  if (!Object.keys(latency).length) return;
+  const ms = (v) => (v === null || v === undefined ? "–" : Math.round(v) + " ms");
+  const part = (label, value, cls = "") => { const s = el("span", cls); s.append(label + " ", el("b", "", value)); box.append(s); };
+  const spoken = (latency.stt_ms || 0) + (latency.total_ms || 0) - (latency.wait_ms || 0) + (latency.tts_ms || 0);
+  part("STT", ms(latency.stt_ms));
+  part("model", `${ms(latency.llm_ms)} · ${latency.llm_calls ?? 0} call${latency.llm_calls === 1 ? "" : "s"}`);
+  part("tools", ms(latency.tool_ms));
+  part("TTS start", ms(latency.tts_ms));
+  part("total", ms(spoken));
+  if (latency.wait_ms > 1) part("quota wait (excluded)", ms(latency.wait_ms), "wait");
 }
 
 function pickVoice() {
@@ -94,7 +124,7 @@ function speak(text, turn) {
 }
 
 async function sendText(text, sttMs = null) {
-  if (!text.trim()) { status("Didn't catch that — try again."); return; }
+  if (!text.trim()) { status("Didn't catch that. Try again."); return; }
   addMessage("user", text);
   status("Thinking…");
   const res = await fetch("/chat", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -102,10 +132,15 @@ async function sendText(text, sttMs = null) {
   if (!res.ok) { status(`Error ${res.status}: ${(await res.json()).detail}`); return; }
   const r = await res.json();
   addMessage("agent", r.reply, r);
-  renderMemory(r.state);
+  renderMemory(r.state, r.asking_for);
   latency = { ...r.timings, tts_ms: null }; renderLatency();
   status("");
   speak([...r.updates, r.reply].join(" "), r.turn);
+}
+
+function setPtt(recording) {
+  $("ptt").classList.toggle("recording", recording);
+  $("ptt-label").textContent = recording ? "Listening… release to send" : "Hold to talk";
 }
 
 async function startRecording() {
@@ -117,7 +152,7 @@ async function startRecording() {
     recorder = new MediaRecorder(stream);
     recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
     recorder.start();
-    $("ptt").classList.add("recording"); $("ptt").textContent = "Listening… release to send";
+    setPtt(true);
   } catch (e) {
     status("Microphone unavailable: " + e.message + ". You can type instead.");
   }
@@ -126,12 +161,12 @@ async function startRecording() {
 async function stopRecording() {
   if (!recorder) return;
   const rec = recorder; recorder = null;
-  $("ptt").classList.remove("recording"); $("ptt").textContent = "Hold to talk";
+  setPtt(false);
   await new Promise((resolve) => { rec.onstop = resolve; rec.stop(); });
   rec.stream.getTracks().forEach((t) => t.stop());
   const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
-  if (blob.size < 2000) { status("Too short — hold the button while you speak."); return; }
-  busy = true;
+  if (blob.size < 2000) { status("Too short. Hold the button while you speak."); return; }
+  busy = true; $("ptt").disabled = true;
   try {
     status("Transcribing…");
     const form = new FormData(); form.append("audio", blob, "speech.webm");
@@ -139,7 +174,7 @@ async function stopRecording() {
     if (!res.ok) { status(`Speech-to-text error ${res.status}: ${(await res.json()).detail}`); return; }
     const { text, stt_ms } = await res.json();
     await sendText(text, stt_ms);
-  } finally { busy = false; }
+  } finally { busy = false; $("ptt").disabled = false; }
 }
 
 const ptt = $("ptt");
@@ -159,10 +194,11 @@ $("textform").addEventListener("submit", async (e) => {
 });
 $("reset").addEventListener("click", async () => {
   await fetch(`/reset/${sessionId}`, { method: "POST" });
-  sessionId = crypto.randomUUID(); lastProfile = {};
-  $("transcript").innerHTML = ""; $("latency").textContent = ""; status("");
-  renderMemory({ profile: {}, missing_required: REQUIRED, confirmed: false, awaiting_confirmation: false, changelog: [] });
+  location.reload();
 });
 
-renderMemory({ profile: {}, missing_required: REQUIRED, confirmed: false, awaiting_confirmation: false, changelog: [] });
-speechSynthesis?.getVoices(); // warm the voice list
+fetch("/config").then((r) => r.json()).then((c) => {
+  if (c.fake_llm) { $("mode").hidden = false; $("mode").textContent = "FAKE_LLM: canned replies, no API calls"; }
+}).catch(() => {});
+renderMemory(EMPTY_STATE);
+if ("speechSynthesis" in window) speechSynthesis.getVoices(); // warm the voice list

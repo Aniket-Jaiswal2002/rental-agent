@@ -1,5 +1,6 @@
 """FastAPI app: text/voice chat, speech-to-text, per-turn latency log, and the web UI."""
 import json
+import os
 import time
 from pathlib import Path
 from typing import Optional
@@ -11,6 +12,7 @@ from pydantic import BaseModel
 
 from .agent import Agent
 from .config import ROOT
+from .fake_llm import FakeLLM
 from .llm import GroqClient, LLMClient, LLMError, RateLimited
 from .voice import STTError, transcribe
 
@@ -23,11 +25,19 @@ _sessions: dict[str, Agent] = {}
 _llm: LLMClient | None = None
 
 
+FAKE_LLM = os.getenv("FAKE_LLM") == "1"  # canned replies for UI work; no API calls, no tokens
+
+
 def get_llm() -> LLMClient:
     global _llm
     if _llm is None:
-        _llm = GroqClient()
+        _llm = FakeLLM() if FAKE_LLM else GroqClient()
     return _llm
+
+
+@app.get("/config")
+def config() -> dict:
+    return {"fake_llm": FAKE_LLM, "model": getattr(get_llm(), "model", "unknown")}
 
 
 def _agent(session_id: str) -> Agent:
