@@ -1,0 +1,43 @@
+:root {
+  --bg: #f7f7f5; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #e3e3de;
+  --accent: #1f6f5c; --accent-text: #ffffff; --user: #e8f0ee; --warn: #9a5b00; --flash: #fff3c4;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #161615; --panel: #1f1f1d; --text: #ecece8; --muted: #9a9a94; --line: #33332f;
+          --accent: #3fa58a; --accent-text: #0f1a17; --user: #233430; --warn: #e0a94a; --flash: #4a4220; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 15px/1.45 system-ui, sans-serif; background: var(--bg); color: var(--text); }
+header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+h1 { font-size: 18px; margin: 0; }
+.note { color: var(--warn); font-size: 13px; }
+header .ghost { margin-left: auto; }
+main { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; padding: 16px; max-width: 1100px; margin: 0 auto; }
+@media (max-width: 760px) { main { grid-template-columns: 1fr; } }
+.chat, .memory { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+#transcript { min-height: 300px; max-height: 60vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.msg { padding: 8px 12px; border-radius: 10px; max-width: 85%; white-space: pre-wrap; }
+.msg.user { background: var(--user); align-self: flex-end; }
+.msg.agent { border: 1px solid var(--line); align-self: flex-start; }
+.msg .update { color: var(--accent); font-weight: 600; display: block; }
+.card { margin-top: 6px; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--bg); border-radius: 6px; }
+.card b { display: block; }
+.card .facts { color: var(--muted); font-size: 13px; }
+.controls { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+#ptt { background: var(--accent); color: var(--accent-text); border: 0; border-radius: 999px; padding: 12px 22px; font-weight: 600; user-select: none; touch-action: none; }
+#ptt.recording { background: #c0392b; color: #fff; }
+form { display: flex; gap: 8px; flex: 1; min-width: 220px; }
+input { flex: 1; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); }
+button { padding: 10px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); cursor: pointer; }
+.status { color: var(--muted); font-size: 13px; min-height: 18px; margin-top: 8px; }
+.latency { font: 12px/1.4 ui-monospace, monospace; color: var(--muted); margin-top: 4px; }
+.memory h2 { font-size: 16px; margin: 0 0 8px; }
+.memory h3 { font-size: 13px; margin: 14px 0 4px; color: var(--muted); }
+.sub { color: var(--muted); font-weight: 400; font-size: 13px; }
+dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 0; }
+dt { color: var(--muted); }
+dd { margin: 0; }
+dd.missing { color: var(--warn); }
+dd.flash { background: var(--flash); transition: background 1.5s; }
+#flags { font-size: 13px; margin-bottom: 8px; }
+#changelog { padding-left: 18px; margin: 0; font-size: 13px; color: var(--muted); }

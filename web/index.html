@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Renter Intake Agent</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>Renter intake agent</h1>
+    <span class="note">Listings are SYNTHETIC demo data</span>
+    <button id="reset" class="ghost">New conversation</button>
+  </header>
+
+  <main>
+    <section class="chat">
+      <div id="transcript" aria-live="polite"></div>
+      <div class="controls">
+        <button id="ptt" title="Hold to talk (or hold Space)">Hold to talk</button>
+        <form id="textform">
+          <input id="text" placeholder="…or type a message" autocomplete="off">
+          <button type="submit">Send</button>
+        </form>
+      </div>
+      <div id="status" class="status"></div>
+      <div id="latency" class="latency"></div>
+    </section>
+
+    <aside class="memory">
+      <h2>Renter profile <span class="sub">(agent memory)</span></h2>
+      <div id="flags"></div>
+      <dl id="profile"></dl>
+      <h3>Changes</h3>
+      <ol id="changelog"></ol>
+    </aside>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
