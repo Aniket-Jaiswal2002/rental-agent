@@ -4,8 +4,8 @@
 
 The FIRST file is the headline: a full pass on one commit, and the only source of the headline pass rate.
 Later files are follow-ups. They never replace anything: each follow-up run is listed next to the case's
-first result, as "after fix" (different commit, with that commit's subject as the note) or as an extra run
-of the same commit. results.md is a pure function of the raw files; never edit it by hand.
+first result, as "after fix" (different commit; the note lists every code commit between the two) or as an extra
+run of the same commit. The reasoning_effort each run used is shown wherever the raw file recorded it. results.md is a pure function of the raw files; never edit it by hand.
 """
 from __future__ import annotations
 
@@ -41,6 +41,7 @@ def load_raw(path: Path) -> dict:
         r.setdefault("model", raw.get("model", UNKNOWN))
         r.setdefault("commit", raw.get("commit", UNKNOWN))
         r.setdefault("dirty", raw.get("dirty"))
+        r.setdefault("reasoning_effort", raw.get("reasoning_effort", UNKNOWN))
     return raw
 
 
@@ -50,11 +51,21 @@ def commit_label(r: dict) -> str:
     return short + (" (dirty tree)" if r.get("dirty") else "")
 
 
-def commit_subject(sha: str) -> str:
-    if not sha or sha == UNKNOWN:
-        return "unknown change (commit not recorded)"
-    out = subprocess.run(["git", "log", "-1", "--format=%s", sha], cwd=ROOT, capture_output=True, text=True)
-    return out.stdout.strip() or f"commit {sha[:7]}"
+def commits_between(base: str, head: str) -> list[str]:
+    """'<sha> <subject>' for every code commit in base..head, oldest first. Commits that touch only eval
+    outputs (evals/raw, evals/results.md) are left out."""
+    if not head or head == UNKNOWN:
+        return ["unknown change (commit not recorded)"]
+    rng = [f"{base}..{head}"] if base and base != UNKNOWN else ["-1", head]
+    out = subprocess.run(["git", "log", "--reverse", "--format=%h %s", *rng, "--",
+                          ".", ":(exclude)evals/raw", ":(exclude)evals/results.md"], cwd=ROOT, capture_output=True, text=True)
+    if out.returncode != 0:
+        return [f"commit {head[:7]} (not in this repository's history)"]
+    return [s for s in out.stdout.splitlines() if s.strip()] or ["no code change"]
+
+
+def _run_label(r: dict) -> str:
+    return f"{commit_label(r)}, effort {r.get('reasoning_effort') or UNKNOWN}"
 
 
 def pct(values: list[float], q: float) -> float:
@@ -73,11 +84,12 @@ def render(passes: list[dict], all_case_ids: list[str] | None = None) -> str:
     case_ids = list(dict.fromkeys(r["case"] for r in results))
     models = sorted({r.get("model") or UNKNOWN for r in results})
     commits = sorted({commit_label(r) for r in results})
+    efforts = sorted({r.get("reasoning_effort") or UNKNOWN for r in results})
     runs = max(sum(r["case"] == c for r in results) for c in case_ids)
     missing = [c for c in (all_case_ids or []) if c not in case_ids]
 
     lines = ["# Eval results", "",
-             f"Headline: first full pass, `{head['source']}` · model `{', '.join(models)}` · commit `{', '.join(commits)}` · {runs} run(s) per case.", "",
+             f"Headline: first full pass, `{head['source']}` · model `{', '.join(models)}` · reasoning_effort `{', '.join(efforts)}` · commit `{', '.join(commits)}` · {runs} run(s) per case.", "",
              *(["- **1 run per case; 3 planned, limited by Groq free-tier caps.**"] if runs == 1 else []),
              "- Data is SYNTHETIC. Checks are deterministic (tool log, structured fields, dataset); no LLM judge.",
              "- `RATE_LIMITED` runs (Groq 429 outlasted retries) are excluded from pass rates and listed separately; `ERROR` runs count as failures.",
@@ -129,15 +141,17 @@ def render(passes: list[dict], all_case_ids: list[str] | None = None) -> str:
         for r in results:
             first.setdefault(r["case"], r)
         lines += ["", "## Follow-up runs (not part of the headline)", "",
-                  "| Case | First result (commit) | Follow-up result (commit) | Kind | What changed |", "|---|---|---|---|---|"]
+                  "| Case | First result (commit, effort) | Follow-up result (commit, effort) | Kind | What changed |",
+                  "|---|---|---|---|---|"]
         for p, r in follow:
             f0 = first.get(r["case"])
             same = f0 is not None and f0.get("commit") == r.get("commit") and f0.get("dirty") == r.get("dirty") \
                 and r.get("commit") != UNKNOWN and not r.get("dirty")
-            kind = "extra run, same commit" if same else "after fix"
-            note = "—" if same else commit_subject(r.get("commit"))
-            before = f"{_status(f0)} ({commit_label(f0)})" if f0 else "not in headline pass"
-            lines.append(f"| {r['case']} | {before} | {_status(r)} ({commit_label(r)}) | {kind} | {note} |")
+            same_effort = f0 is not None and f0.get("reasoning_effort") == r.get("reasoning_effort") != UNKNOWN
+            kind = ("extra run, same commit" if same_effort else "same commit, other settings") if same else "after fix"
+            note = "—" if same else "<br>".join(commits_between(f0.get("commit") if f0 else UNKNOWN, r.get("commit")))
+            before = f"{_status(f0)} ({_run_label(f0)})" if f0 else "not in headline pass"
+            lines.append(f"| {r['case']} | {before} | {_status(r)} ({_run_label(r)}) | {kind} | {note} |")
         lines += ["", "Sources: " + ", ".join(f"`{p['source']}`" for p in passes[1:]) + "."]
 
     bad = [r for r in results if r["status"] in ("FAIL", "ERROR")]

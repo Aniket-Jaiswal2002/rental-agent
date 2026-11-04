@@ -44,6 +44,13 @@ def git_state() -> tuple[str, bool]:
     sha = git("rev-parse", "HEAD") or "not recorded"
     dirty = bool(git("status", "--porcelain", "--", ".", ":(exclude)evals/raw", ":(exclude)evals/results.md"))
     return sha, dirty
+
+
+def reasoning_effort(model: str) -> str:
+    """The reasoning_effort actually sent to the API ("api default" if none is sent)."""
+    return (settings.reasoning_effort or "api default") if "gpt-oss" in model else "not applicable"
+
+
 NUDGE = "Sure, please go ahead."
 MAX_NUDGES = 2
 
@@ -98,7 +105,7 @@ def run_once(case: dict, client, commit: str, dirty: bool) -> dict:
         checks, status, note = {}, "RATE_LIMITED", str(e)[:200]
     except LLMError as e:
         checks, status, note = {}, "ERROR", str(e)[:200]
-    return {"case": case["id"], "model": client.model, "commit": commit, "dirty": dirty, "status": status, "note": note, "checks": checks, "tokens": llm.tokens, "prompt_tokens": llm.prompt_tokens, "completion_tokens": llm.completion_tokens,
+    return {"case": case["id"], "model": client.model, "reasoning_effort": reasoning_effort(client.model), "commit": commit, "dirty": dirty, "status": status, "note": note, "checks": checks, "tokens": llm.tokens, "prompt_tokens": llm.prompt_tokens, "completion_tokens": llm.completion_tokens,
             "llm_calls": llm.calls, "seconds": round(time.perf_counter() - started, 1),
             "turn_timings": [t.result.timings.to_dict() for t in turns],
             "transcript": [{"script_idx": t.script_idx, "user": t.user, "reply": t.result.display_text,
@@ -127,7 +134,9 @@ def main() -> None:
             f"pass was recorded on a dirty tree; start a fresh pass instead" if raw["dirty"] else
             f"working tree is dirty; commit or stash first" if dirty else
             f"code changed since {raw['commit'][:7]} (HEAD {commit[:7]})" if not same_code(raw["commit"], commit) else
-            f"model is {client.model} but the pass used {raw['model']}" if client.model != raw["model"] else None
+            f"model is {client.model} but the pass used {raw['model']}" if client.model != raw["model"] else
+            f"reasoning_effort is {reasoning_effort(client.model)} but the pass used {raw.get('reasoning_effort')}"
+            if reasoning_effort(client.model) != raw.get("reasoning_effort") else None
         )
         if problem:
             raise SystemExit(f"cannot resume {raw_path.name}: {problem}")
@@ -138,7 +147,7 @@ def main() -> None:
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         raw_path = RAW_DIR / f"{stamp}.json"  # one file per pass: input to `python -m evals.report`
         cases = load_cases(args.cases)
-        raw = {"model": client.model, "commit": commit, "dirty": dirty, "runs": args.runs, "generated": stamp,
+        raw = {"model": client.model, "reasoning_effort": reasoning_effort(client.model), "commit": commit, "dirty": dirty, "runs": args.runs, "generated": stamp,
                "windows": [stamp], "complete": False, "pending": [c["id"] for c in cases], "results": []}
         if dirty:
             print("WARNING: working tree is dirty; this pass cannot be resumed and is not reproducible.\n")
@@ -147,7 +156,7 @@ def main() -> None:
     save = lambda: raw_path.write_text(json.dumps(raw, indent=2, ensure_ascii=False), encoding="utf-8")
     save()
 
-    print(f"{len(cases)} case(s) x {raw['runs']} run(s), model {client.model}, commit {commit[:7]}"
+    print(f"{len(cases)} case(s) x {raw['runs']} run(s), model {client.model}, reasoning_effort {raw.get('reasoning_effort')}, commit {commit[:7]}"
           f"{' (dirty tree)' if dirty else ''} -> {raw_path}\n")
     for case in cases:
         case_results = []
