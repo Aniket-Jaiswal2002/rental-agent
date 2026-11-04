@@ -46,9 +46,17 @@ def _fmt(field: str, v) -> str:
     return ", ".join(map(str, v)) if isinstance(v, list) else str(v)
 
 
+_LABELS = {"budget_max": "budget"}  # spoken names where the field name reads badly
+
+
 def _announce(change: dict) -> str:
     field = change["field"]
-    return f"Updated {field.replace('_', ' ')}: {_fmt(field, change['old'])} -> {_fmt(field, change['new'])}."
+    label = _LABELS.get(field, field.replace("_", " "))
+    return f"Updated {label}: {_fmt(field, change['old'])} -> {_fmt(field, change['new'])}."
+
+
+def _and_list(items: list[str]) -> str:
+    return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} and {items[-1]}"
 
 def _dump(obj) -> str:
     return json.dumps(obj, ensure_ascii=False, default=str)
@@ -71,7 +79,7 @@ def read_back_text(p: RenterProfile) -> str:
         parts.append("with parking" if p.parking else "no parking needed")
     open_ = [name for name, v in (("furnishing", p.furnishing), ("pets", p.pets), ("tenant type", p.tenant_type),
                                   ("parking", p.parking)) if v is None]
-    open_txt = (f" {', '.join(open_).capitalize()} {'is' if len(open_) == 1 else 'are'} open unless you tell me otherwise."
+    open_txt = (f" {_and_list(open_).capitalize()} {'is' if len(open_) == 1 else 'are'} open unless you tell me otherwise."
                 if open_ else "")
     return f"Let me confirm: {', '.join(parts)}.{open_txt} Shall I search with this?"
 

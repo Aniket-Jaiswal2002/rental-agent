@@ -196,12 +196,6 @@ That shaped a few choices:
 - **Limited date phrases.** The relative-date resolver covers a fixed set of English and Hinglish phrases;
   anything else makes the agent ask for a date.
 
-Known cosmetic issues, found during Phase 3 and deliberately left until the eval pass completes because they
-touch agent code:
-
-- the correction note says "Updated budget max" instead of "Updated budget";
-- the read-back's list of open fields has no "and" ("Furnishing, pets, tenant type, parking are open").
-
 ## What I'd build next
 
 - **Broker follow-ups:** message the listing's broker with the renter's confirmed profile, and track replies.

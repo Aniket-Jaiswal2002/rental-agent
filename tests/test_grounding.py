@@ -132,7 +132,7 @@ def test_read_back_text_covers_every_field():
     text = read_back_text(p)
     assert text.startswith("Let me confirm: a 2 or 3 BHK in Sector 56 or Sector 57, budget up to 30,000 rupees a month, "
                            "moving in on 1 December 2026, commuting to Cyber City, with a pet, for a family.")
-    assert "Furnishing, parking are open" in text and text.endswith("Shall I search with this?")
+    assert "Furnishing and parking are open" in text and text.endswith("Shall I search with this?")
 
 
 # -- change kinds ----------------------------------------------------------------------------------
@@ -173,7 +173,7 @@ def test_english_correction_is_applied_and_announced_old_to_new():
     a.turn("budget 30000")
     r = a.turn("Actually make it 35k")
     assert r.state["profile"]["budget_max"] == 35000
-    assert r.updates == ["Updated budget max: ₹30,000 -> ₹35,000."]
+    assert r.updates == ["Updated budget: ₹30,000 -> ₹35,000."]
     assert r.display_text.startswith(r.updates[0])
     assert r.state["changelog"][-1]["kind"] == "correction"
 
@@ -185,7 +185,7 @@ def test_hinglish_correction_nahi_35_kar_do():
     ]))
     a.turn("budget tees hazaar")
     r = a.turn("nahi, 35 kar do")
-    assert r.state["profile"]["budget_max"] == 35000 and r.updates == ["Updated budget max: ₹30,000 -> ₹35,000."]
+    assert r.state["profile"]["budget_max"] == 35000 and r.updates == ["Updated budget: ₹30,000 -> ₹35,000."]
 
 
 def test_overwrite_mislabelled_new_is_rejected_atomically():
@@ -213,7 +213,7 @@ def test_changing_budget_after_confirmation_resets_and_code_reads_back_again():
     assert r.changes[0]["field"] == "budget_max" and r.changes[0]["new"] == 40000
     assert r.state["awaiting_confirmation"] and not r.state["confirmed"]
     assert a.state.last_search is None and r.timings.llm_calls == 1
-    assert r.updates == ["Updated budget max: ₹30,000 -> ₹40,000."] and "40,000 rupees" in r.reply
+    assert r.updates == ["Updated budget: ₹30,000 -> ₹40,000."] and "40,000 rupees" in r.reply
 
 
 # -- stale read-back (eval case 10) -----------------------------------------------------------------
@@ -338,3 +338,10 @@ def test_malformed_tool_call_text_is_not_taken_as_a_reply():
     a = Agent(TextThenScriptLLM(['{"name": "update_profile", "arguments": {}}', [respond("What's your budget?", asking_for=["budget_max"])]]))
     r = a.turn("2 BHK")
     assert r.reply == "What's your budget?" and r.timings.llm_calls == 2
+
+
+def test_read_back_open_fields_read_naturally():
+    p = RenterProfile.model_validate(FULL)
+    assert "Furnishing, pets, tenant type and parking are open unless" in read_back_text(p)
+    p = RenterProfile.model_validate({**FULL, "furnishing": "unfurnished", "pets": False, "tenant_type": "family"})
+    assert "Parking is open unless" in read_back_text(p)
