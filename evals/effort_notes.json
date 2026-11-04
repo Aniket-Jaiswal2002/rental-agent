@@ -1,0 +1,9 @@
+{
+  "note": "from run commands; not recorded in these raw files",
+  "why": "These passes ran before evals.run recorded reasoning_effort. The values come from the commands that started them (headline: default GROQ_REASONING_EFFORT=low; follow-ups: set explicitly). evals.report applies them only to files that do not record the field, and footnotes them.",
+  "files": {
+    "20261104-155255.json": "low",
+    "20261104-174950.json": "low",
+    "20261104-175624.json": "medium"
+  }
+}

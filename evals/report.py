@@ -21,6 +21,9 @@ from .checks import CHECKS
 HERE = Path(__file__).parent
 ROOT = HERE.parent
 UNKNOWN = "not recorded"
+NOTE_MARK = "†"
+_notes_path = HERE / "effort_notes.json"
+EFFORT_NOTES = json.loads(_notes_path.read_text(encoding="utf-8")) if _notes_path.exists() else {}
 
 # Prompt tokens per LLM call, measured with `python -m scripts.probe_tokens` (Groq usage numbers).
 PROBE = [
@@ -42,6 +45,11 @@ def load_raw(path: Path) -> dict:
         r.setdefault("commit", raw.get("commit", UNKNOWN))
         r.setdefault("dirty", raw.get("dirty"))
         r.setdefault("reasoning_effort", raw.get("reasoning_effort", UNKNOWN))
+    noted = EFFORT_NOTES.get("files", {}).get(path.name) if "reasoning_effort" not in raw else None
+    if noted:  # an older pass: effort comes from its run command, footnoted, never mixed up with recorded values
+        for r in raw["results"]:
+            if r["reasoning_effort"] == UNKNOWN:
+                r["reasoning_effort"], r["effort_from_note"] = noted, True
     return raw
 
 
@@ -66,7 +74,11 @@ def commits_between(base: str, head: str) -> list[str]:
 
 
 def _run_label(r: dict) -> str:
-    return f"{commit_label(r)}, effort {r.get('reasoning_effort') or UNKNOWN}"
+    return f"{commit_label(r)}, effort {_effort(r)}"
+
+
+def _effort(r: dict) -> str:
+    return (r.get("reasoning_effort") or UNKNOWN) + (NOTE_MARK if r.get("effort_from_note") else "")
 
 
 def pct(values: list[float], q: float) -> float:
@@ -85,7 +97,7 @@ def render(passes: list[dict], all_case_ids: list[str] | None = None) -> str:
     case_ids = list(dict.fromkeys(r["case"] for r in results))
     models = sorted({r.get("model") or UNKNOWN for r in results})
     commits = sorted({commit_label(r) for r in results})
-    efforts = sorted({r.get("reasoning_effort") or UNKNOWN for r in results})
+    efforts = sorted({_effort(r) for r in results})
     runs = max(sum(r["case"] == c for r in results) for c in case_ids)
     missing = [c for c in (all_case_ids or []) if c not in case_ids]
 
@@ -154,6 +166,8 @@ def render(passes: list[dict], all_case_ids: list[str] | None = None) -> str:
             before = f"{_status(f0)} ({_run_label(f0)})" if f0 else "not in headline pass"
             lines.append(f"| {r['case']} | {before} | {_status(r)} ({_run_label(r)}) | {kind} | {note} |")
         lines += ["", "Sources: " + ", ".join(f"`{p['source']}`" for p in passes[1:]) + "."]
+    if any(r.get("effort_from_note") for p in passes for r in p["results"]):
+        lines += ["", f"{NOTE_MARK} reasoning_effort {EFFORT_NOTES.get('note', 'from run commands')} (`evals/effort_notes.json`)."]
 
     bad = [r for r in results if r["status"] in ("FAIL", "ERROR")]
     if bad:

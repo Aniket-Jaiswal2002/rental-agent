@@ -76,3 +76,33 @@ def test_commits_between_lists_every_code_commit_and_skips_eval_output_commits(t
     monkeypatch.setattr(rep, "ROOT", tmp_path)
     assert [s.split(" ", 1)[1] for s in rep.commits_between(base, head)] == ["fix one", "fix two"]
     assert rep.commits_between(base, "f" * 40)[0].endswith("(not in this repository's history)")
+
+def test_effort_from_run_command_note_is_footnoted_and_never_overrides_recorded(tmp_path, monkeypatch):
+    import json
+    import evals.report as rep
+    monkeypatch.setattr(rep, "EFFORT_NOTES", {"note": "from run commands; not recorded in these raw files",
+                                              "files": {"old.json": "medium", "new.json": "medium"}})
+    legacy = run("c1", "FAIL")
+    del legacy["reasoning_effort"]  # a pass from before the field existed
+    old = tmp_path / "old.json"
+    old.write_text(json.dumps({"results": [legacy]}))
+    new = tmp_path / "new.json"
+    new.write_text(json.dumps({"reasoning_effort": "low", "results": [run("c1", "PASS", commit=B, effort="low")]}))
+    monkeypatch.setattr(rep, "commits_between", lambda base, head: ["bbbbbbb fix"])
+    md = render([rep.load_raw(old), rep.load_raw(new)])
+    assert "reasoning_effort `medium†`" in md
+    assert "(aaaaaaa, effort medium†) | PASS (bbbbbbb, effort low) | after fix |" in md  # recorded value wins
+    assert "† reasoning_effort from run commands; not recorded in these raw files" in md
+
+
+def test_effort_notes_file_matches_the_committed_raw_files():
+    import evals.report as rep
+    from pathlib import Path
+    raw_dir = Path(rep.HERE) / "raw"
+    for name in rep.EFFORT_NOTES["files"]:
+        assert (raw_dir / name).exists() and "reasoning_effort" not in json_load(raw_dir / name)
+
+
+def json_load(p):
+    import json
+    return json.loads(p.read_text(encoding="utf-8"))
