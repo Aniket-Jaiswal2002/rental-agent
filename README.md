@@ -188,6 +188,13 @@ That shaped a few choices:
   text, and the agent copes, but this is lightly tested.
 - **The model still judges intent.** The code enforces the `change_kind` contract, but deciding whether
   something is a correction or a conflict is still the model's call.
+- **Uncued contradictions are treated as corrections** (eval case 03 fails). When a renter states a different
+  value with no cue ("My budget is 20000" after saying 30000), the model labels it a correction instead of a
+  conflict, so the agent doesn't ask which is right. This is mitigated because every correction is announced
+  (old -> new) and the profile is read back before any search. It happened at both `reasoning_effort` low and
+  medium; I chose not to add a prompt rule for it and kept low. In one after-fix run at low effort the model
+  also labelled an explicit "Sorry, 30000 is the right budget" as a conflict and asked again; that was a
+  single run and did not reproduce at medium.
 - **Trade-off sentences are model-written.** Their numbers come from tool-result fields, but the sentence
   itself is not verified.
 - **Small eval sample.** One run per case on a non-deterministic model: a pass rate from 12 runs is indicative,
