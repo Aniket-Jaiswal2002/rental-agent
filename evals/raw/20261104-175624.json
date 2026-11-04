@@ -1,0 +1,485 @@
+{
+  "model": "openai/gpt-oss-120b",
+  "commit": "9597cecb82ed423b3f3465f63012671bec9daa14",
+  "dirty": false,
+  "runs": 1,
+  "generated": "20261104-175624",
+  "windows": [
+    "20261104-175624"
+  ],
+  "complete": true,
+  "pending": [],
+  "results": [
+    {
+      "case": "03_contradictory_info",
+      "model": "openai/gpt-oss-120b",
+      "commit": "9597cecb82ed423b3f3465f63012671bec9daa14",
+      "dirty": false,
+      "status": "FAIL",
+      "note": "",
+      "checks": {
+        "a_asked_before_search": [],
+        "b_final_profile": [],
+        "c_grounding": [],
+        "d_no_match": [],
+        "e_case_specific": [
+          "scripted turn 2: expected asking_for to include ['budget_max'], got []"
+        ],
+        "f_no_fallback": []
+      },
+      "tokens": 14193,
+      "prompt_tokens": 12750,
+      "completion_tokens": 1443,
+      "llm_calls": 8,
+      "seconds": 127.7,
+      "turn_timings": [
+        {
+          "stt_ms": null,
+          "llm_ms": 1515.2,
+          "wait_ms": 2140.0,
+          "llm_calls": 2,
+          "llm_tokens": 3630,
+          "tool_ms": 0.2,
+          "tts_ms": null,
+          "total_ms": 3655.9
+        },
+        {
+          "stt_ms": null,
+          "llm_ms": 1559.3,
+          "wait_ms": 6830.7,
+          "llm_calls": 1,
+          "llm_tokens": 2249,
+          "tool_ms": 0.2,
+          "tts_ms": null,
+          "total_ms": 8390.3
+        },
+        {
+          "stt_ms": null,
+          "llm_ms": 1338.5,
+          "wait_ms": 48922.0,
+          "llm_calls": 1,
+          "llm_tokens": 2011,
+          "tool_ms": 0.1,
+          "tts_ms": null,
+          "total_ms": 50260.8
+        },
+        {
+          "stt_ms": null,
+          "llm_ms": 4423.7,
+          "wait_ms": 60954.0,
+          "llm_calls": 4,
+          "llm_tokens": 6303,
+          "tool_ms": 0.6,
+          "tts_ms": null,
+          "total_ms": 65378.7
+        }
+      ],
+      "transcript": [
+        {
+          "script_idx": 1,
+          "user": "I'm looking for a 2 BHK in Sector 56, my budget is 30000.",
+          "reply": "Sure, when would you like to move in and where do you need to commute to?",
+          "asking_for": [
+            "move_in_date",
+            "commute_destination"
+          ],
+          "state": {
+            "profile": {
+              "budget_max": 30000,
+              "areas": [
+                "Sector 56"
+              ],
+              "bhk": [
+                2
+              ],
+              "move_in_date": null,
+              "commute_destination": null,
+              "furnishing": null,
+              "pets": null,
+              "tenant_type": null,
+              "parking": null
+            },
+            "missing_required": [
+              "move_in_date",
+              "commute_destination"
+            ],
+            "awaiting_confirmation": false,
+            "confirmed": false,
+            "shown_ids": [],
+            "pending_conflicts": {},
+            "changelog": [
+              {
+                "field": "areas",
+                "old": [],
+                "new": [
+                  "Sector 56"
+                ],
+                "kind": "new",
+                "turn": 1
+              },
+              {
+                "field": "bhk",
+                "old": [],
+                "new": [
+                  2
+                ],
+                "kind": "new",
+                "turn": 1
+              },
+              {
+                "field": "budget_max",
+                "old": null,
+                "new": 30000,
+                "kind": "new",
+                "turn": 1
+              }
+            ]
+          },
+          "tools": [
+            {
+              "name": "update_profile",
+              "args": {
+                "change_kinds": {
+                  "areas": "new",
+                  "bhk": "new",
+                  "budget_max": "new"
+                },
+                "changes": {
+                  "areas": [
+                    "Sector 56"
+                  ],
+                  "bhk": [
+                    2
+                  ],
+                  "budget_max": 30000
+                }
+              },
+              "error": null
+            }
+          ]
+        },
+        {
+          "script_idx": 2,
+          "user": "My budget is 20000. I'll move in on 1st December and my office is at Cyber City.",
+          "reply": "Updated budget max: ₹30,000 -> ₹20,000.\nLet me confirm: a 2 BHK in Sector 56, budget up to 20,000 rupees a month, moving in on 1 December 2026, commuting to Cyber City. Furnishing, pets, tenant type, parking are open unless you tell me otherwise. Shall I search with this?",
+          "asking_for": [],
+          "state": {
+            "profile": {
+              "budget_max": 20000,
+              "areas": [
+                "Sector 56"
+              ],
+              "bhk": [
+                2
+              ],
+              "move_in_date": "2026-12-01",
+              "commute_destination": "Cyber City",
+              "furnishing": null,
+              "pets": null,
+              "tenant_type": null,
+              "parking": null
+            },
+            "missing_required": [],
+            "awaiting_confirmation": true,
+            "confirmed": false,
+            "shown_ids": [],
+            "pending_conflicts": {},
+            "changelog": [
+              {
+                "field": "areas",
+                "old": [],
+                "new": [
+                  "Sector 56"
+                ],
+                "kind": "new",
+                "turn": 1
+              },
+              {
+                "field": "bhk",
+                "old": [],
+                "new": [
+                  2
+                ],
+                "kind": "new",
+                "turn": 1
+              },
+              {
+                "field": "budget_max",
+                "old": null,
+                "new": 30000,
+                "kind": "new",
+                "turn": 1
+              },
+              {
+                "field": "budget_max",
+                "old": 30000,
+                "new": 20000,
+                "kind": "correction",
+                "turn": 2
+              },
+              {
+                "field": "commute_destination",
+                "old": null,
+                "new": "Cyber City",
+                "kind": "new",
+                "turn": 2
+              },
+              {
+                "field": "move_in_date",
+                "old": null,
+                "new": "2026-12-01",
+                "kind": "new",
+                "turn": 2
+              }
+            ]
+          },
+          "tools": [
+            {
+              "name": "update_profile",
+              "args": {
+                "change_kinds": {
+                  "budget_max": "correction",
+                  "commute_destination": "new",
+                  "move_in_date": "new"
+                },
+                "changes": {
+                  "budget_max": 20000,
+                  "commute_destination": "Cyber City",
+                  "move_in_date": "2026-12-01"
+                }
+              },
+              "error": null
+            },
+            {
+              "name": "read_back_profile",
+              "args": {},
+              "error": null
+            }
+          ]
+        },
+        {
+          "script_idx": 3,
+          "user": "Sorry, 30000 is the right budget.",
+          "reply": "Updated budget max: ₹20,000 -> ₹30,000.\nLet me confirm: a 2 BHK in Sector 56, budget up to 30,000 rupees a month, moving in on 1 December 2026, commuting to Cyber City. Furnishing, pets, tenant type, parking are open unless you tell me otherwise. Shall I search with this?",
+          "asking_for": [],
+          "state": {
+            "profile": {
+              "budget_max": 30000,
+              "areas": [
+                "Sector 56"
+              ],
+              "bhk": [
+                2
+              ],
+              "move_in_date": "2026-12-01",
+              "commute_destination": "Cyber City",
+              "furnishing": null,
+              "pets": null,
+              "tenant_type": null,
+              "parking": null
+            },
+            "missing_required": [],
+            "awaiting_confirmation": true,
+            "confirmed": false,
+            "shown_ids": [],
+            "pending_conflicts": {},
+            "changelog": [
+              {
+                "field": "areas",
+                "old": [],
+                "new": [
+                  "Sector 56"
+                ],
+                "kind": "new",
+                "turn": 1
+              },
+              {
+                "field": "bhk",
+                "old": [],
+                "new": [
+                  2
+                ],
+                "kind": "new",
+                "turn": 1
+              },
+              {
+                "field": "budget_max",
+                "old": null,
+                "new": 30000,
+                "kind": "new",
+                "turn": 1
+              },
+              {
+                "field": "budget_max",
+                "old": 30000,
+                "new": 20000,
+                "kind": "correction",
+                "turn": 2
+              },
+              {
+                "field": "commute_destination",
+                "old": null,
+                "new": "Cyber City",
+                "kind": "new",
+                "turn": 2
+              },
+              {
+                "field": "move_in_date",
+                "old": null,
+                "new": "2026-12-01",
+                "kind": "new",
+                "turn": 2
+              },
+              {
+                "field": "budget_max",
+                "old": 20000,
+                "new": 30000,
+                "kind": "correction",
+                "turn": 3
+              }
+            ]
+          },
+          "tools": [
+            {
+              "name": "update_profile",
+              "args": {
+                "change_kinds": {
+                  "budget_max": "correction"
+                },
+                "changes": {
+                  "budget_max": 30000
+                }
+              },
+              "error": null
+            },
+            {
+              "name": "read_back_profile",
+              "args": {},
+              "error": null
+            }
+          ]
+        },
+        {
+          "script_idx": 4,
+          "user": "Yes, that's right.",
+          "reply": "Here are the options:\n  L021 · 2 BHK, Sector 56 (Golf Course Extension Road) · ₹28,000/mo (deposit ₹84,000) · unfurnished · from 2026-11-05 — 9.5 km commute to Cyber City, pets allowed, parking available.",
+          "asking_for": [],
+          "state": {
+            "profile": {
+              "budget_max": 30000,
+              "areas": [
+                "Sector 56"
+              ],
+              "bhk": [
+                2
+              ],
+              "move_in_date": "2026-12-01",
+              "commute_destination": "Cyber City",
+              "furnishing": null,
+              "pets": null,
+              "tenant_type": null,
+              "parking": null
+            },
+            "missing_required": [],
+            "awaiting_confirmation": false,
+            "confirmed": true,
+            "shown_ids": [
+              "L021"
+            ],
+            "pending_conflicts": {},
+            "changelog": [
+              {
+                "field": "areas",
+                "old": [],
+                "new": [
+                  "Sector 56"
+                ],
+                "kind": "new",
+                "turn": 1
+              },
+              {
+                "field": "bhk",
+                "old": [],
+                "new": [
+                  2
+                ],
+                "kind": "new",
+                "turn": 1
+              },
+              {
+                "field": "budget_max",
+                "old": null,
+                "new": 30000,
+                "kind": "new",
+                "turn": 1
+              },
+              {
+                "field": "budget_max",
+                "old": 30000,
+                "new": 20000,
+                "kind": "correction",
+                "turn": 2
+              },
+              {
+                "field": "commute_destination",
+                "old": null,
+                "new": "Cyber City",
+                "kind": "new",
+                "turn": 2
+              },
+              {
+                "field": "move_in_date",
+                "old": null,
+                "new": "2026-12-01",
+                "kind": "new",
+                "turn": 2
+              },
+              {
+                "field": "budget_max",
+                "old": 20000,
+                "new": 30000,
+                "kind": "correction",
+                "turn": 3
+              }
+            ]
+          },
+          "tools": [
+            {
+              "name": "search_listings",
+              "args": {},
+              "error": "cannot search: the renter has not confirmed the current profile (read it back and wait for a yes)"
+            },
+            {
+              "name": "confirm_profile",
+              "args": {
+                "renter_quote": "Yes, that's right."
+              },
+              "error": null
+            },
+            {
+              "name": "search_listings",
+              "args": {},
+              "error": null
+            },
+            {
+              "name": "respond_from_text",
+              "args": {
+                "text": "Here are the top match:\n\n- L021: 9.5 km commute to Cyber City, pets allowed, parking available."
+              },
+              "error": null
+            },
+            {
+              "name": "respond_rejected",
+              "args": {
+                "reply": "Here are the top match:\n\n- L021: 9.5 km commute to Cyber City, pets allowed, parking available.",
+                "asking_for": [],
+                "shortlist": []
+              },
+              "error": "the search returned matches; put the best (up to 3) in shortlist"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
