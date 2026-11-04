@@ -19,7 +19,8 @@ def _fn(name: str, description: str, properties: dict, required: list[str] | Non
 TOOLS = [
     _fn("update_profile",
         "Record details the renter gave or changed: only changed fields, full new value (areas/bhk replace the list), null clears. "
-        "change_kinds needs new|correction|conflict for each field.",
+        "change_kinds needs new|correction|conflict for each field. A conflict still carries the renter's new value in changes: "
+        "it is held as pending (not applied) until the renter says which is right.",
         {"changes": {"type": "object", "additionalProperties": False, "properties": {
             "budget_max": _NULLABLE("integer"),
             "areas": {"type": ["array", "null"], "items": {"type": "string"}},
@@ -75,7 +76,8 @@ def run_tool(name: str, args: dict[str, Any], state: SessionState, ctx: TurnCont
         if name == "update_profile":
             changes = args.get("changes")
             if not isinstance(changes, dict) or not changes:
-                raise ProfileError("changes must be a non-empty object")
+                raise ProfileError("changes must be a non-empty object; for a conflict, put the renter's new value in "
+                                   "changes with change_kind 'conflict' (it is held as pending, not applied)")
             kinds = args.get("change_kinds")
             if not isinstance(kinds, dict):
                 raise ProfileError("change_kinds is required: one of new/correction/conflict for every field in changes")
@@ -83,12 +85,15 @@ def run_tool(name: str, args: dict[str, Any], state: SessionState, ctx: TurnCont
             if plan.errors:
                 raise ProfileError("; ".join(plan.errors))  # atomic: nothing applied
             log = state.update_profile(plan.apply, plan.kinds) if plan.apply else []
+            state.resolve_conflicts(f for f in changes if f not in plan.pending)  # the renter settled these fields
+            state.hold_conflicts(plan.pending)
             ctx.changes += [{**e, "kind": plan.kinds.get(e["field"], "new"), "turn": state.turn} for e in log]
             ctx.conflicts += [f for f in plan.conflicts if f not in ctx.conflicts]
             out = {"applied": log, "unchanged": not log and not plan.conflicts, "missing_required": state.profile.missing_required(),
                    "note": "confirmation reset; read the profile back again before searching" if log else ""}
             if plan.conflicts:
                 out["not_applied_conflicts"] = plan.conflicts
+                out["pending"] = {f: state.pending_conflicts[f] for f in plan.conflicts}
                 if plan.notes:
                     out["notes"] = plan.notes
                 out["instruction"] = ("Ask the renter ONE clarifying question about these fields and put them in asking_for; "

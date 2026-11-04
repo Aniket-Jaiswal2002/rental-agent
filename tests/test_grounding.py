@@ -272,3 +272,33 @@ def test_profile_change_clears_shown_ids():
     a.turn("yes")
     r = a.turn("make it 40k")
     assert r.state["shown_ids"] == []
+
+
+# -- a conflict carries its proposed value as pending (eval case 03) -----------------------------------
+
+def test_conflict_holds_proposed_value_as_pending_then_resolution_clears_it():
+    a = Agent(FakeLLM([
+        [upd({"budget_max": 30000}, {"budget_max": "new"}), respond("Which area?", asking_for=["areas"])],
+        [upd({"budget_max": 20000}, {"budget_max": "conflict"}), respond("30000 or 20000?", asking_for=["budget_max"])],
+        [upd({"budget_max": 30000}, {"budget_max": "correction"}), respond("Got it. Which area?", asking_for=["areas"])],
+    ]))
+    a.turn("budget 30000")
+    r = a.turn("my budget is 20000")
+    assert r.state["profile"]["budget_max"] == 30000  # not applied
+    assert r.state["pending_conflicts"] == {"budget_max": {"stored": 30000, "proposed": 20000}}
+    assert r.tool_log[0]["result"]["pending"]["budget_max"]["proposed"] == 20000
+    r = a.turn("sorry, 30000 is right")  # restates the stored value: a no-op that settles the conflict
+    assert r.state["pending_conflicts"] == {} and r.state["profile"]["budget_max"] == 30000
+
+
+def test_conflict_with_empty_changes_is_rejected_with_a_hint():
+    a = Agent(FakeLLM([[("update_profile", {"changes": {}, "change_kinds": {"budget_max": "conflict"}})],
+                       [respond("ok", asking_for=["budget_max"])]]))
+    r = a.turn("hmm, 20000?")
+    assert "held as pending" in r.tool_log[0]["result"]["error"]
+
+
+def test_invalid_conflict_value_is_an_error_not_a_pending_value():
+    a = Agent(FakeLLM([[upd({"budget_max": -5}, {"budget_max": "conflict"})], [respond("ok", asking_for=["budget_max"])]]))
+    r = a.turn("budget minus five")
+    assert "error" in r.tool_log[0]["result"] and r.state["pending_conflicts"] == {}

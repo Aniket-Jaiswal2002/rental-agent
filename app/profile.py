@@ -103,6 +103,7 @@ class UpdatePlan:
         self.apply: dict[str, Any] = {}  # field -> value to write
         self.kinds: dict[str, str] = {}  # field -> "new" | "correction" for applied fields
         self.conflicts: list[str] = []  # fields NOT applied; the renter must be asked
+        self.pending: dict[str, Any] = {}  # conflict field -> the proposed value, held until the renter picks
         self.notes: list[str] = []
         self.errors: list[str] = []
 
@@ -122,9 +123,16 @@ def plan_update(profile: RenterProfile, changes: dict[str, Any], kinds: dict[str
         elif kind not in CHANGE_KINDS:
             plan.errors.append(f"{field}: change_kind must be one of {list(CHANGE_KINDS)}")
         elif kind == "conflict":
+            try:
+                apply_update(profile, {field: value})  # validate the proposed value; it is held, not applied
+            except ProfileError as e:
+                plan.errors.append(f"{field}: {e}")
+                continue
             plan.conflicts.append(field)
+            plan.pending[field] = value
         elif field == "areas" and value and all(" ".join(str(a).lower().split()) in CITY_LEVEL for a in value):
             plan.conflicts.append(field)  # not applied; the agent must ask, exactly as for a conflict
+            plan.pending[field] = value
             plan.notes.append(f"{value} is the whole city, not an area: ask which sectors or localities they prefer")
         else:
             old = getattr(profile, field)
@@ -165,6 +173,7 @@ class SessionState:
         self.read_back_turn: Optional[int] = None  # assistant turn in which read-back happened
         self.last_search: Optional[dict] = None  # latest search_listings result
         self.shown_ids: list[str] = []  # listing ids on the cards of the latest assistant turn that showed any
+        self.pending_conflicts: dict[str, dict] = {}  # field -> {"stored", "proposed"}: contradicted, not applied
 
     # -- profile updates -------------------------------------------------
     def update_profile(self, changes: dict[str, Any], kinds: Optional[dict[str, str]] = None) -> list[dict]:
@@ -179,6 +188,15 @@ class SessionState:
             self.last_search = None  # results were for the old profile
             self.shown_ids = []
         return log
+
+    def hold_conflicts(self, proposed: dict[str, Any]) -> None:
+        """Record contradicted values the renter has not resolved yet (never applied to the profile)."""
+        for field, value in proposed.items():
+            self.pending_conflicts[field] = {"stored": _plain(getattr(self.profile, field)), "proposed": value}
+
+    def resolve_conflicts(self, fields) -> None:
+        for field in fields:
+            self.pending_conflicts.pop(field, None)
 
     # -- confirmation gate -----------------------------------------------
     def read_back(self) -> None:
@@ -218,6 +236,7 @@ class SessionState:
             "awaiting_confirmation": self.awaiting_confirmation,
             "confirmed": self.confirmed,
             "shown_ids": list(self.shown_ids),
+            "pending_conflicts": dict(self.pending_conflicts),
             "changelog": list(self.changelog),
         }
 

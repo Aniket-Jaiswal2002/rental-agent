@@ -25,7 +25,7 @@ FALLBACK_REPLY = "Sorry, I got tangled up there. Could you say that once more?"
 SYSTEM_PROMPT = """\
 You are a voice assistant helping a renter find a home in Gurugram. Replies are spoken: English only, 1-3 short sentences, no markdown. The renter may speak English or Hinglish ("pachees hazaar" = 25000, "dedh lakh" = 150000).
 
-MEMORY: the PROFILE in STATE is your memory, not the chat. Call update_profile whenever the renter gives or changes a detail. Every field needs a change_kind: "new" (field empty, or a list gains entries); "correction" (renter replaces a stored value: "actually 35k", "nahi, 35 kar do"; after a read-back any changed value is a correction); "conflict" (incompatible values in one turn, or unclear which is meant). A conflict is NOT applied: ask ONE short question with that field in asking_for, plus any missing required field, and do not read back until resolved. The app announces corrections itself.
+MEMORY: the PROFILE in STATE is your memory, not the chat. Call update_profile whenever the renter gives or changes a detail. Every field needs a change_kind: "new" (field empty, or a list gains entries); "correction" (renter replaces a stored value: "actually 35k", "nahi, 35 kar do"; after a read-back any changed value is a correction); "conflict" (incompatible values in one turn, or unclear which is meant). A conflict still carries the new value in changes but is NOT applied (STATE shows it under pending_conflicts until resolved; resolve with the chosen value as correction, or restate the stored one): ask ONE short question with that field in asking_for, plus any missing required field, and do not read back until resolved. The app announces corrections itself.
 Never infer values. Optional fields (furnishing, pets, tenant_type, parking) stay null unless stated outright ("family"/"bachelor" must be said). Dates: ISO when the renter names a date; for relative phrases ("within a week", "next month", "agle hafte") pass the phrase as said and the app resolves it. "Gurgaon"/"Gurugram" is the whole city, not an area: ask which sectors. Use canonical area names when they match.
 
 FLOW: when you can, put update_profile and respond in the SAME response. (1) While required fields are missing, ask for them, 1-2 at a time; asking_for = exactly those. (2) Once all required fields are filled, the app itself reads the profile back and asks for confirmation; do not write a read-back. (3) If the renter explicitly confirms the read-back, call confirm_profile(quote) only; the app runs the search and returns the results, then respond with the shortlist. If they change something instead, call update_profile. If they say something else, just answer it; the app repeats the read-back. Searching before confirmation is impossible.
@@ -124,6 +124,7 @@ class Agent:
             "canonical_area_names": listings.known_localities(),
             "last_asked": self.last_asked,
             "already_shown": s.shown_ids,
+            "pending_conflicts": s.pending_conflicts,
             "latest_search": None,
         }
         if s.last_search:
