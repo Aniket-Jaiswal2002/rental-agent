@@ -302,3 +302,39 @@ def test_invalid_conflict_value_is_an_error_not_a_pending_value():
     a = Agent(FakeLLM([[upd({"budget_max": -5}, {"budget_max": "conflict"})], [respond("ok", asking_for=["budget_max"])]]))
     r = a.turn("budget minus five")
     assert "error" in r.tool_log[0]["result"] and r.state["pending_conflicts"] == {}
+
+
+# -- plain-text replies are accepted without another LLM call ------------------------------------------
+
+class TextThenScriptLLM(FakeLLM):
+    """Script items that are a str are returned as plain assistant text instead of tool calls."""
+
+    def chat(self, messages, tools):
+        if isinstance(self.script[0], str):
+            self.calls.append(json.loads(json.dumps(messages, default=str)))
+            text = self.script.pop(0)
+            return LLMResponse(content=text, tool_calls=[], raw_message={"role": "assistant", "content": text}, elapsed_ms=1.0)
+        return super().chat(messages, tools)
+
+
+def test_plain_text_reply_is_accepted_as_respond_in_one_call():
+    a = Agent(TextThenScriptLLM(["Hi! I can help you find a flat in Gurugram."]))
+    r = a.turn("hello")
+    assert r.reply == "Hi! I can help you find a flat in Gurugram." and r.timings.llm_calls == 1
+    assert r.asking_for == [] and r.shortlist == [] and not r.fallback
+    assert any(t["name"] == "respond_from_text" for t in r.tool_log)
+
+
+def test_plain_text_still_validated_after_a_search_with_matches():
+    a = awaiting_agent([[CONFIRM], "Here are the top matches: L021 looks good.",
+                        [respond("Here's the best match.", shortlist=[{"listing_id": "L021", "tradeoff": "Within budget."}])]])
+    a.llm.__class__ = TextThenScriptLLM
+    r = a.turn("yes")
+    assert any(t["name"] == "respond_rejected" and "shortlist" in t["result"]["error"] for t in r.tool_log)
+    assert [x["id"] for x in r.shortlist] == ["L021"] and r.timings.llm_calls == 3
+
+
+def test_malformed_tool_call_text_is_not_taken_as_a_reply():
+    a = Agent(TextThenScriptLLM(['{"name": "update_profile", "arguments": {}}', [respond("What's your budget?", asking_for=["budget_max"])]]))
+    r = a.turn("2 BHK")
+    assert r.reply == "What's your budget?" and r.timings.llm_calls == 2

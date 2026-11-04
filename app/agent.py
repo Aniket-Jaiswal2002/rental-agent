@@ -84,6 +84,15 @@ def _as_json_object(text: str) -> Optional[dict]:
     return obj if isinstance(obj, dict) else None
 
 
+def _plain_text_reply(content: Optional[str]) -> Optional[str]:
+    """The model's text when it answered in prose instead of calling respond; None for empty text or
+    anything that looks like a malformed tool call (JSON, or tool-call markup)."""
+    text = (content or "").strip()
+    if not text or text[0] in "{[<" or "functions." in text or "<|" in text:
+        return None
+    return text
+
+
 @dataclass
 class TurnResult:
     reply: str
@@ -156,8 +165,13 @@ class Agent:
                 pending: Optional[tuple[Optional[str], dict]] = None  # (tool_call_id, respond args)
                 if not resp.tool_calls:
                     payload = _as_json_object(resp.content)  # some models send the reply as bare JSON
+                    text = _plain_text_reply(resp.content)  # ...or as plain text
                     if payload and "reply" in payload:
                         pending = (None, payload)
+                    elif text:  # treated as respond with nothing shortlisted or asked; still validated below
+                        pending = (None, {"reply": text, "asking_for": [], "shortlist": []})
+                        ctx.tool_log.append({"name": "respond_from_text", "args": {"text": text[:300]}, "result": {},
+                                             "ms": 0, "turn": self.state.turn, "by": "code"})
                     else:
                         self._reject(messages, ctx, None, {"text": resp.content[:300]}, "you must end the turn by calling the respond tool")
                         continue
