@@ -58,7 +58,8 @@ def commits_between(base: str, head: str) -> list[str]:
         return ["unknown change (commit not recorded)"]
     rng = [f"{base}..{head}"] if base and base != UNKNOWN else ["-1", head]
     out = subprocess.run(["git", "log", "--reverse", "--format=%h %s", *rng, "--",
-                          ".", ":(exclude)evals/raw", ":(exclude)evals/results.md"], cwd=ROOT, capture_output=True, text=True)
+                          ".", ":(exclude)evals/raw", ":(exclude)evals/results.md"], cwd=ROOT, capture_output=True, text=True,
+                         encoding="utf-8", errors="replace")  # git prints UTF-8; the Windows code page would garble it
     if out.returncode != 0:
         return [f"commit {head[:7]} (not in this repository's history)"]
     return [s for s in out.stdout.splitlines() if s.strip()] or ["no code change"]
