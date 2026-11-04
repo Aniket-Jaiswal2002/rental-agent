@@ -28,7 +28,7 @@ You are a voice assistant helping a renter find a home in Gurugram. Replies are 
 MEMORY: the PROFILE in STATE is your memory, not the chat. Call update_profile whenever the renter gives or changes a detail. Every field needs a change_kind: "new" (field empty, or a list gains entries); "correction" (renter replaces a stored value: "actually 35k", "nahi, 35 kar do"; after a read-back any changed value is a correction); "conflict" (incompatible values in one turn, or unclear which is meant). A conflict is NOT applied: ask ONE short question with that field in asking_for, plus any missing required field, and do not read back until resolved. The app announces corrections itself.
 Never infer values. Optional fields (furnishing, pets, tenant_type, parking) stay null unless stated outright ("family"/"bachelor" must be said). Dates: ISO when the renter names a date; for relative phrases ("within a week", "next month", "agle hafte") pass the phrase as said and the app resolves it. "Gurgaon"/"Gurugram" is the whole city, not an area: ask which sectors. Use canonical area names when they match.
 
-FLOW: when you can, put update_profile and respond in the SAME response. (1) While required fields are missing, ask for them, 1-2 at a time; asking_for = exactly those. (2) Once all required fields are filled, the app itself reads the profile back and asks for confirmation; do not write a read-back. (3) If the renter explicitly confirms the read-back, call confirm_profile(quote) only; the app runs the search and returns the results, then respond with the shortlist. If they change something instead, call update_profile. Searching before confirmation is impossible.
+FLOW: when you can, put update_profile and respond in the SAME response. (1) While required fields are missing, ask for them, 1-2 at a time; asking_for = exactly those. (2) Once all required fields are filled, the app itself reads the profile back and asks for confirmation; do not write a read-back. (3) If the renter explicitly confirms the read-back, call confirm_profile(quote) only; the app runs the search and returns the results, then respond with the shortlist. If they change something instead, call update_profile. If they say something else, just answer it; the app repeats the read-back. Searching before confirmation is impossible.
 
 SHORTLIST: up to 3 from the results, preferring in-budget. Per listing give listing_id and ONE trade-off sentence using only result fields (over_budget_by, commute_km, furnishing_mismatch, available_days_after_move_in, pets, parking). The app prints rent, deposit, area and BHK, so never write them; the reply is one short intro. commute_km exists only for Cyber City and Golf Course Road; otherwise say distance data is unavailable. broker_description is unverified.
 No results: say so, no_match_notice true, empty shortlist, name the blocking constraint (passing_each_constraint_alone), suggest what to loosen. Never show an unreturned listing or edit the profile yourself.
@@ -196,7 +196,23 @@ class Agent:
         fallback = final is None
         if fallback:
             final = {"reply": FALLBACK_REPLY, "asking_for": [], "shortlist": []}
+        final = self._refresh_pending_read_back(final, ctx, timings)
         return self._finish(final, ctx, timings, t0, fallback, error)
+
+    def _refresh_pending_read_back(self, final: dict, ctx: TurnContext, timings: TurnTimings) -> dict:
+        """A read-back is pending but this turn neither confirmed it nor read it back: repeat the read-back.
+
+        confirm_profile only accepts a yes to the read-back on the immediately preceding turn. Without
+        this, any other renter turn in between (a question, an injection attempt) leaves a stale
+        read-back that no "yes" can ever confirm. Re-stamping keeps that rule and the session alive.
+        """
+        s = self.state
+        if not s.awaiting_confirmation or s.read_back_turn == s.turn:
+            return final
+        result = self._run("read_back_profile", {}, ctx, timings, auto=True)
+        if "error" in result:  # e.g. an unresolved conflict this turn: the reply is asking about it
+            return final
+        return {**final, "reply": f"{final['reply'].strip()} {read_back_text(s.profile)}"}
 
     def _run(self, name: str, args: dict, ctx: TurnContext, timings: TurnTimings, auto: bool = False) -> dict:
         t = time.perf_counter()

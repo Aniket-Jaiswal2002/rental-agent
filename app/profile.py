@@ -189,9 +189,11 @@ class SessionState:
 
     def confirm(self, renter_quote: str, last_user_message: str) -> None:
         if not self.awaiting_confirmation or self.read_back_turn is None:
-            raise ProfileError("no read-back is pending; call read_back_profile first and wait for the renter's reply")
+            raise ProfileError("no read-back is pending: the app reads the profile back once every required field is "
+                               "filled; do not confirm yet")
         if self.read_back_turn != self.turn - 1:
-            raise ProfileError("the read-back must have happened on your immediately preceding turn; read it back again")
+            raise ProfileError("the read-back is stale (another turn came in between), so this cannot confirm it; "
+                               "just respond: the app repeats the read-back at the end of this turn")
         if not _contains(last_user_message, renter_quote):
             raise ProfileError("renter_quote must be copied verbatim from the renter's latest message")
         self.awaiting_confirmation = False
