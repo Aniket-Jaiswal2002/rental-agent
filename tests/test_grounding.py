@@ -345,3 +345,22 @@ def test_read_back_open_fields_read_naturally():
     assert "Furnishing, pets, tenant type and parking are open unless" in read_back_text(p)
     p = RenterProfile.model_validate({**FULL, "furnishing": "unfurnished", "pets": False, "tenant_type": "family"})
     assert "Parking is open unless" in read_back_text(p)
+
+
+def test_plain_text_guard_rejects_punctuation_and_repeats():
+    from app.agent import _plain_text_reply
+    assert _plain_text_reply("   ") is None
+    assert _plain_text_reply("...?!.. -- ...") is None
+    assert _plain_text_reply("ok.............................") is None  # mostly punctuation
+    assert _plain_text_reply("When do you move in?", previous_reply="when do you  move in?") is None
+    assert _plain_text_reply("When do you move in?", previous_reply="What's your budget?") == "When do you move in?"
+
+
+def test_repeated_plain_text_falls_back_to_the_retry_path():
+    a = Agent(TextThenScriptLLM([[respond("What's your budget?", asking_for=["budget_max"])],
+                                 "What's your budget?", [respond("Roughly how much per month?", asking_for=["budget_max"])]]))
+    a.turn("hi")
+    r = a.turn("hmm")
+    assert r.reply == "Roughly how much per month?" and r.timings.llm_calls == 2
+    assert any(t["name"] == "respond_rejected" for t in r.tool_log)
+    assert not any(t["name"] == "respond_from_text" for t in r.tool_log)
