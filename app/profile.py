@@ -164,6 +164,7 @@ class SessionState:
         self.turn = 0  # renter turns so far (1-based while a turn is in flight)
         self.read_back_turn: Optional[int] = None  # assistant turn in which read-back happened
         self.last_search: Optional[dict] = None  # latest search_listings result
+        self.shown_ids: list[str] = []  # listing ids on the cards of the latest assistant turn that showed any
 
     # -- profile updates -------------------------------------------------
     def update_profile(self, changes: dict[str, Any], kinds: Optional[dict[str, str]] = None) -> list[dict]:
@@ -176,6 +177,7 @@ class SessionState:
             self.confirmed = False
             self.read_back_turn = None
             self.last_search = None  # results were for the old profile
+            self.shown_ids = []
         return log
 
     # -- confirmation gate -----------------------------------------------
@@ -215,6 +217,7 @@ class SessionState:
             "missing_required": self.profile.missing_required(),
             "awaiting_confirmation": self.awaiting_confirmation,
             "confirmed": self.confirmed,
+            "shown_ids": list(self.shown_ids),
             "changelog": list(self.changelog),
         }
 

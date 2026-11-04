@@ -250,3 +250,25 @@ def test_confirm_errors_do_not_mention_a_tool_the_model_lacks():
             assert "read_back_profile" not in str(e)
         else:
             raise AssertionError("confirm should have failed")
+
+
+# -- shown listings live in state, not in chat text (eval case 06) ------------------------------------
+
+def test_shown_ids_tracked_in_state_not_written_into_history():
+    a = awaiting_agent([[CONFIRM], [respond("Here's the best match.", shortlist=[{"listing_id": "L021", "tradeoff": "Within budget."}])],
+                        [("get_listing", {"listing_id": "L099"})], [respond("L099 doesn't exist.")]])
+    r = a.turn("yes")
+    assert r.state["shown_ids"] == ["L021"] and a.history[-1]["content"] == "Here's the best match."
+    assert not any("L021" in m["content"] for m in a.history if m["role"] == "assistant")
+    r = a.turn("What about listing L099?")
+    system = a.llm.calls[-1][0]["content"]
+    assert '"already_shown": ["L021"]' in system and "fill it ONLY on a turn where a search ran" in system
+    assert r.shortlist == [] and a.state.shown_ids == ["L021"]  # a turn without cards keeps the record
+
+
+def test_profile_change_clears_shown_ids():
+    a = awaiting_agent([[CONFIRM], [respond(shortlist=[{"listing_id": "L021", "tradeoff": "ok"}])],
+                        [upd({"budget_max": 40000}, {"budget_max": "correction"})]])
+    a.turn("yes")
+    r = a.turn("make it 40k")
+    assert r.state["shown_ids"] == []
