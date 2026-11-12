@@ -1,11 +1,12 @@
-"""Copy the rendered eval report into README.md between the EVAL-RESULTS markers.
+"""Write the compact eval summary into README.md between the EVAL-RESULTS markers.
 
-    python -m evals.report <headline raw> [follow-up raws...]     # writes evals/results.md
-    python -m scripts.fill_readme [--pending "Full pass on c3b7539|running"]
+    python -m scripts.fill_readme --headline evals/raw/<headline>.json \
+        [--followups evals/raw/<a>.json evals/raw/<b>.json] \
+        [--final evals/raw/<final>.json | --final-pending c3b7539]
 
-The README section is evals/results.md with its headings moved one level down; nothing is retyped. --pending
-adds one clearly marked row above it for a pass that has not finished (label|status); drop the flag once
-the pass is in.
+One summary line and one table (case | headline | after-fix | final), built from the raw files only. The
+headline column is always the first full pass. Everything else (per-check rates, "What changed", the
+reasoning_effort footnote, failure details) stays in evals/results.md, which the section links to.
 """
 from __future__ import annotations
 
@@ -13,39 +14,92 @@ import argparse
 import re
 from pathlib import Path
 
+from evals.report import UNKNOWN, load_raw
+
 ROOT = Path(__file__).parent.parent
 START, END = "<!-- EVAL-RESULTS:START", "<!-- EVAL-RESULTS:END -->"
+NOT_RUN = "—"
 
 
-def section(results_md: str, pending: str | None = None) -> str:
-    lines = results_md.strip().splitlines()
-    if lines and lines[0].startswith("# "):
-        lines = lines[1:]
-    body = "\n".join("#" + l if l.startswith("## ") or l.startswith("### ") else l for l in lines).strip()
-    head = ""
-    if pending:
-        label, _, status = pending.partition("|")
-        head = (f"| Pass not yet in the results below | Status |\n|---|---|\n"
-                f"| {label.strip()} | **{(status or 'running').strip().upper()}: not finished; this section will be "
-                f"re-rendered when it is** |\n\n")
-    return head + body
+def _commits(raws: list[dict]) -> str:
+    shas = sorted({(r.get("commit") or UNKNOWN)[:7] for raw in raws for r in raw["results"]})
+    return ", ".join(f"`{s}`" for s in shas) or UNKNOWN
+
+
+def _cell(runs: list[dict]) -> str:
+    """Status of each run of one case; the reasoning_effort is named only when the runs differ in it."""
+    if not runs:
+        return NOT_RUN
+    many_efforts = len({r.get("reasoning_effort") for r in runs}) > 1
+    return ", ".join(r["status"] + (f" (effort {r.get('reasoning_effort')})" if many_efforts else "") for r in runs)
+
+
+def _tally(results: list[dict]) -> str:
+    real = [r for r in results if r["status"] != "RATE_LIMITED"]
+    return f"{sum(r['status'] == 'PASS' for r in real)}/{len(real)}"
+
+
+def section(headline: dict, followups: list[dict], final: dict | None = None, final_pending: str | None = None) -> str:
+    cases = list(dict.fromkeys(r["case"] for r in headline["results"]))
+    by_case = lambda raws, c: [r for raw in raws for r in raw["results"] if r["case"] == c]
+    summary = [f"**Headline: {_tally(headline['results'])} runs passed** on the first full pass ({_commits([headline])}, "
+               f"1 run per case)."]
+    cols = [f"Headline {_commits([headline])}"]
+    if followups:
+        fixed = [c for c in cases if by_case([headline], c)[0]["status"] != "PASS" and by_case(followups, c)
+                 and all(r["status"] == "PASS" for r in by_case(followups, c))]
+        still = [c for c in cases if any(r["status"] != "PASS" for r in by_case(followups, c))]
+        rerun = [c for c in cases if by_case(followups, c)]
+        summary.append(f"After fixes ({_commits(followups)}), {len(rerun)} cases were re-run: "
+                       f"now passing after a headline failure: {', '.join(c[:2] for c in fixed) or 'none'}; "
+                       f"still failing: {', '.join(c[:2] for c in still) or 'none'}.")
+        cols.append(f"After fix {_commits(followups)}")
+    if final:
+        done = "" if final.get("complete", True) else " so far (pass not complete)"
+        summary.append(f"Full pass on {_commits([final])}: {_tally(final['results'])} passed{done}.")
+        cols.append(f"Final {_commits([final])}")
+    elif final_pending:
+        summary.append(f"Full pass on `{final_pending}`: **running**, not in the table yet.")
+        cols.append(f"Final `{final_pending}`")
+    summary.append("The headline never changes; later runs are shown beside it.")
+
+    lines = [" ".join(summary), "", "| Case | " + " | ".join(cols) + " |", "|---|" + "---|" * len(cols)]
+    for c in cases:
+        row = [_cell(by_case([headline], c))]
+        if followups:
+            row.append(_cell(by_case(followups, c)))
+        if final:
+            row.append(_cell(by_case([final], c)))
+        elif final_pending:
+            row.append("running")
+        lines.append(f"| {c} | " + " | ".join(row) + " |")
+    lines += ["", f"`{NOT_RUN}` = not re-run. Full report, with per-check pass rates, what changed between commits, the "
+                  "reasoning_effort of each run and its footnote, and failure details: [evals/results.md](evals/results.md)."]
+    return "\n".join(lines)
 
 
 def fill(readme: str, content: str) -> str:
     pattern = re.compile(re.escape(START) + r"[^\n]*\n.*?" + re.escape(END), re.S)
     if not pattern.search(readme):
         raise SystemExit("EVAL-RESULTS markers not found in README.md")
-    marker = f"{START} — generated by `python -m scripts.fill_readme` from `evals/results.md`; do not hand-edit -->"
+    marker = f"{START} — generated by `python -m scripts.fill_readme` from the raw eval files; do not hand-edit -->"
     return pattern.sub(lambda _: f"{marker}\n{content}\n{END}", readme)
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--pending", help='"label|status" for a pass that has not finished')
+    ap.add_argument("--headline", required=True, help="raw file of the first full pass")
+    ap.add_argument("--followups", nargs="*", default=[], help="raw files of after-fix re-runs, oldest first")
+    ap.add_argument("--final", help="raw file of the full pass on the final commit")
+    ap.add_argument("--final-pending", metavar="SHA", help="the final pass is still running on this commit")
     args = ap.parse_args()
+    if args.final and args.final_pending:
+        raise SystemExit("use --final or --final-pending, not both")
+    load = lambda p: load_raw(Path(p))
+    content = section(load(args.headline), [load(p) for p in args.followups],
+                      load(args.final) if args.final else None, args.final_pending)
     readme = ROOT / "README.md"
-    results = (ROOT / "evals" / "results.md").read_text(encoding="utf-8")
-    readme.write_text(fill(readme.read_text(encoding="utf-8"), section(results, args.pending)), encoding="utf-8", newline="\n")
+    readme.write_text(fill(readme.read_text(encoding="utf-8"), content), encoding="utf-8", newline="\n")
     print("README.md eval section updated")
 
 

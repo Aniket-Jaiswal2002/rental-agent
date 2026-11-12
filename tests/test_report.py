@@ -108,12 +108,25 @@ def json_load(p):
     return json.loads(p.read_text(encoding="utf-8"))
 
 
-def test_fill_readme_moves_headings_down_and_marks_a_pending_pass():
+def test_fill_readme_compact_table_from_raw_passes():
     from scripts.fill_readme import END, START, fill, section
-    sec = section("# Eval results\n\nHeadline: x\n\n## Follow-up runs\n\n### 03_case\n- **e**: y\n", "Full pass on `abc1234`|running")
-    assert sec.startswith("| Pass not yet in the results below | Status |") and "| Full pass on `abc1234` | **RUNNING: not finished" in sec
-    assert "# Eval results" not in sec and "\n### Follow-up runs" in sec and "\n#### 03_case" in sec
+    head = raw([run("01_a", "PASS"), run("03_b", "FAIL"), run("06_c", "FAIL")])
+    follow = [raw([run("03_b", "FAIL", commit=B), run("06_c", "PASS", commit=B)]), raw([run("03_b", "FAIL", commit=B, effort="medium")])]
+    sec = section(head, follow, final_pending="ccccccc")
+    assert sec.startswith("**Headline: 1/3 runs passed** on the first full pass (`aaaaaaa`, 1 run per case).")
+    assert "2 cases were re-run: now passing after a headline failure: 06; still failing: 03." in sec
+    assert "| Case | Headline `aaaaaaa` | After fix `bbbbbbb` | Final `ccccccc` |" in sec
+    assert "| 01_a | PASS | — | running |" in sec
+    assert "| 03_b | FAIL | FAIL (effort low), FAIL (effort medium) | running |" in sec
+    assert "| 06_c | FAIL | PASS | running |" in sec
+    assert "[evals/results.md](evals/results.md)" in sec and "Prompt size" not in sec
+
+    final = raw([run("01_a", "PASS", commit="c" * 40), run("03_b", "FAIL", commit="c" * 40), run("06_c", "PASS", commit="c" * 40)])
+    done = section(head, follow, final=final)
+    assert "Full pass on `ccccccc`: 2/3 passed." in done and "| 06_c | FAIL | PASS | PASS |" in done
+    assert done.startswith("**Headline: 1/3 runs passed**")  # the final pass never replaces the headline
+
     readme = f"intro\n{START} old note -->\n> PLACEHOLDER\n{END}\noutro\n"
     out = fill(readme, sec)
-    assert "PLACEHOLDER" not in out and out.startswith("intro\n") and out.endswith(f"{END}\noutro\n") and "Headline: x" in out
-    assert fill(out, section("# Eval results\n\nHeadline: z\n")).count("Headline:") == 1  # refilling replaces
+    assert "PLACEHOLDER" not in out and out.startswith("intro\n") and out.endswith(f"{END}\noutro\n")
+    assert fill(out, done).count("**Headline:") == 1  # refilling replaces
