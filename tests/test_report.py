@@ -106,3 +106,14 @@ def test_effort_notes_file_matches_the_committed_raw_files():
 def json_load(p):
     import json
     return json.loads(p.read_text(encoding="utf-8"))
+
+
+def test_fill_readme_moves_headings_down_and_marks_a_pending_pass():
+    from scripts.fill_readme import END, START, fill, section
+    sec = section("# Eval results\n\nHeadline: x\n\n## Follow-up runs\n\n### 03_case\n- **e**: y\n", "Full pass on `abc1234`|running")
+    assert sec.startswith("| Pass not yet in the results below | Status |") and "| Full pass on `abc1234` | **RUNNING: not finished" in sec
+    assert "# Eval results" not in sec and "\n### Follow-up runs" in sec and "\n#### 03_case" in sec
+    readme = f"intro\n{START} old note -->\n> PLACEHOLDER\n{END}\noutro\n"
+    out = fill(readme, sec)
+    assert "PLACEHOLDER" not in out and out.startswith("intro\n") and out.endswith(f"{END}\noutro\n") and "Headline: x" in out
+    assert fill(out, section("# Eval results\n\nHeadline: z\n")).count("Headline:") == 1  # refilling replaces
