@@ -92,21 +92,11 @@ def _as_json_object(text: str) -> Optional[dict]:
     return obj if isinstance(obj, dict) else None
 
 
-def _norm(text: str) -> str:
-    return " ".join(text.lower().split())
-
-
-def _plain_text_reply(content: Optional[str], previous_reply: Optional[str] = None) -> Optional[str]:
-    """The model's text when it answered in prose instead of calling respond. None (so the normal retry
-    path runs) for empty text, text that is mostly punctuation, a repeat of the previous assistant reply,
-    or anything that looks like a malformed tool call (JSON, or tool-call markup)."""
+def _plain_text_reply(content: Optional[str]) -> Optional[str]:
+    """The model's text when it answered in prose instead of calling respond; None for empty text or
+    anything that looks like a malformed tool call (JSON, or tool-call markup)."""
     text = (content or "").strip()
     if not text or text[0] in "{[<" or "functions." in text or "<|" in text:
-        return None
-    visible = [c for c in text if not c.isspace()]
-    if sum(c.isalnum() for c in visible) * 2 < len(visible):
-        return None
-    if previous_reply and _norm(text) == _norm(previous_reply):
         return None
     return text
 
@@ -183,8 +173,7 @@ class Agent:
                 pending: Optional[tuple[Optional[str], dict]] = None  # (tool_call_id, respond args)
                 if not resp.tool_calls:
                     payload = _as_json_object(resp.content)  # some models send the reply as bare JSON
-                    previous = self.history[-1]["content"] if self.history else None
-                    text = _plain_text_reply(resp.content, previous)  # ...or as plain text
+                    text = _plain_text_reply(resp.content)  # ...or as plain text
                     if payload and "reply" in payload:
                         pending = (None, payload)
                     elif text:  # treated as respond with nothing shortlisted or asked; still validated below
