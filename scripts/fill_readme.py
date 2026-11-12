@@ -4,7 +4,7 @@
         [--followups evals/raw/<a>.json evals/raw/<b>.json] \
         [--final evals/raw/<final>.json | --final-pending c3b7539]
 
-One summary line and one table (case | headline | after-fix | final), built from the raw files only. The
+One summary line and one table (case | headline | after-fix | full pass | later re-runs), built from the raw files only. The
 headline column is always the first full pass. Everything else (per-check rates, "What changed", the
 reasoning_effort footnote, failure details) stays in evals/results.md, which the section links to.
 """
@@ -40,7 +40,7 @@ def _tally(results: list[dict]) -> str:
 
 
 def section(headline: dict, followups: list[dict], final: dict | None = None, final_pending: str | None = None,
-            note: str | None = None) -> str:
+            note: str | None = None, later: list[dict] | None = None) -> str:
     cases = list(dict.fromkeys(r["case"] for r in headline["results"]))
     by_case = lambda raws, c: [r for raw in raws for r in raw["results"] if r["case"] == c]
     summary = [f"**Headline: {_tally(headline['results'])} runs passed** on the first full pass ({_commits([headline])}, "
@@ -65,10 +65,16 @@ def section(headline: dict, followups: list[dict], final: dict | None = None, fi
         detail = "; ".join(f"{name}: {', '.join(c[:2] for c in cs)}" for name, cs in groups if cs)
         summary.append(f"Full pass on {_commits([final])}: {_tally(final['results'])} passed{done}"
                        + (f" ({detail})." if detail else "."))
-        cols.append(f"Final {_commits([final])}")
+        cols.append(f"Full pass {_commits([final])}")
     elif final_pending:
         summary.append(f"Full pass on `{final_pending}`: **running**, not in the table yet.")
-        cols.append(f"Final `{final_pending}`")
+        cols.append(f"Full pass `{final_pending}`")
+    if later:
+        passing = [c for c in cases if by_case(later, c) and all(r["status"] == "PASS" for r in by_case(later, c))]
+        failing = [c for c in cases if any(r["status"] != "PASS" for r in by_case(later, c))]
+        summary.append(f"Re-runs after that pass ({_commits(later)}, {len(passing) + len(failing)} cases only, not a full pass): "
+                       f"passing: {', '.join(c[:2] for c in passing) or 'none'}; failing: {', '.join(c[:2] for c in failing) or 'none'}.")
+        cols.append(f"Re-run {_commits(later)}")
     if note:
         summary.append(note.strip())
     summary.append("The headline never changes; later runs are shown beside it.")
@@ -82,6 +88,8 @@ def section(headline: dict, followups: list[dict], final: dict | None = None, fi
             row.append(_cell(by_case([final], c)))
         elif final_pending:
             row.append("running")
+        if later:
+            row.append(_cell(by_case(later, c)))
         lines.append(f"| {c} | " + " | ".join(row) + " |")
     lines += ["", f"`{NOT_RUN}` = not re-run. Full report, with per-check pass rates, what changed between commits, the "
                   "reasoning_effort of each run and its footnote, and failure details: [evals/results.md](evals/results.md)."]
@@ -102,13 +110,14 @@ def main() -> None:
     ap.add_argument("--followups", nargs="*", default=[], help="raw files of after-fix re-runs, oldest first")
     ap.add_argument("--final", help="raw file of the full pass on the final commit")
     ap.add_argument("--final-pending", metavar="SHA", help="the final pass is still running on this commit")
+    ap.add_argument("--later", nargs="*", default=[], help="raw files of re-runs made after the full pass, oldest first")
     ap.add_argument("--note", help="one sentence added to the summary line, e.g. pointing at a known limitation")
     args = ap.parse_args()
     if args.final and args.final_pending:
         raise SystemExit("use --final or --final-pending, not both")
     load = lambda p: load_raw(Path(p))
     content = section(load(args.headline), [load(p) for p in args.followups],
-                      load(args.final) if args.final else None, args.final_pending, args.note)
+                      load(args.final) if args.final else None, args.final_pending, args.note, [load(p) for p in args.later])
     readme = ROOT / "README.md"
     readme.write_text(fill(readme.read_text(encoding="utf-8"), content), encoding="utf-8", newline="\n")
     print("README.md eval section updated")

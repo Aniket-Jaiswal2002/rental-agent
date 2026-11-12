@@ -115,7 +115,7 @@ def test_fill_readme_compact_table_from_raw_passes():
     sec = section(head, follow, final_pending="ccccccc")
     assert sec.startswith("**Headline: 1/3 runs passed** on the first full pass (`aaaaaaa`, 1 run per case).")
     assert "2 cases were re-run: now passing after a headline failure: 06; still failing: 03." in sec
-    assert "| Case | Headline `aaaaaaa` | After fix `bbbbbbb` | Final `ccccccc` |" in sec
+    assert "| Case | Headline `aaaaaaa` | After fix `bbbbbbb` | Full pass `ccccccc` |" in sec
     assert "| 01_a | PASS | — | running |" in sec
     assert "| 03_b | FAIL | FAIL (effort low), FAIL (effort medium) | running |" in sec
     assert "| 06_c | FAIL | PASS | running |" in sec
@@ -132,3 +132,13 @@ def test_fill_readme_compact_table_from_raw_passes():
     out = fill(readme, sec)
     assert "PLACEHOLDER" not in out and out.startswith("intro\n") and out.endswith(f"{END}\noutro\n")
     assert fill(out, done).count("**Headline:") == 1  # refilling replaces
+
+def test_fill_readme_later_reruns_get_their_own_column_after_the_full_pass():
+    from scripts.fill_readme import section
+    head = raw([run("01_a", "PASS"), run("03_b", "FAIL")])
+    final = raw([run("01_a", "FAIL", commit="c" * 40), run("03_b", "FAIL", commit="c" * 40)])
+    later = [raw([run("01_a", "PASS", commit="d" * 40)])]
+    sec = section(head, [], final=final, later=later)
+    assert "| Case | Headline `aaaaaaa` | Full pass `ccccccc` | Re-run `ddddddd` |" in sec
+    assert "| 01_a | PASS | FAIL | PASS |" in sec and "| 03_b | FAIL | FAIL | — |" in sec
+    assert "Re-runs after that pass (`ddddddd`, 1 cases only, not a full pass): passing: 01; failing: none." in sec

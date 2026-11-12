@@ -1,0 +1,976 @@
+{
+  "model": "openai/gpt-oss-120b",
+  "reasoning_effort": "low",
+  "commit": "494397ef78da4b8f6283783f223974544dc197ae",
+  "dirty": false,
+  "runs": 1,
+  "generated": "20261112-153312",
+  "windows": [
+    "20261112-153312"
+  ],
+  "complete": true,
+  "pending": [],
+  "results": [
+    {
+      "case": "01_vague_renter",
+      "model": "openai/gpt-oss-120b",
+      "reasoning_effort": "low",
+      "commit": "494397ef78da4b8f6283783f223974544dc197ae",
+      "dirty": false,
+      "status": "PASS",
+      "note": "",
+      "checks": {
+        "a_asked_before_search": [],
+        "b_final_profile": [],
+        "c_grounding": [],
+        "d_no_match": [],
+        "e_case_specific": [],
+        "f_no_fallback": []
+      },
+      "tokens": 18895,
+      "prompt_tokens": 17920,
+      "completion_tokens": 975,
+      "llm_calls": 15,
+      "seconds": 190.3,
+      "turn_timings": [
+        {
+          "stt_ms": null,
+          "llm_ms": 1669.4,
+          "wait_ms": 2000.0,
+          "llm_calls": 2,
+          "llm_tokens": 1724,
+          "tool_ms": 0.2,
+          "tts_ms": null,
+          "total_ms": 3670.5
+        },
+        {
+          "stt_ms": null,
+          "llm_ms": 8731.5,
+          "wait_ms": 4219.0,
+          "llm_calls": 3,
+          "llm_tokens": 3636,
+          "tool_ms": 0.2,
+          "tts_ms": null,
+          "total_ms": 12951.2
+        },
+        {
+          "stt_ms": null,
+          "llm_ms": 3235.7,
+          "wait_ms": 51813.0,
+          "llm_calls": 3,
+          "llm_tokens": 3745,
+          "tool_ms": 0.3,
+          "tts_ms": null,
+          "total_ms": 55049.6
+        },
+        {
+          "stt_ms": null,
+          "llm_ms": 3636.0,
+          "wait_ms": 50766.0,
+          "llm_calls": 3,
+          "llm_tokens": 3795,
+          "tool_ms": 0.3,
+          "tts_ms": null,
+          "total_ms": 54402.6
+        },
+        {
+          "stt_ms": null,
+          "llm_ms": 1321.8,
+          "wait_ms": 5719.0,
+          "llm_calls": 1,
+          "llm_tokens": 1950,
+          "tool_ms": 0.3,
+          "tts_ms": null,
+          "total_ms": 7041.5
+        },
+        {
+          "stt_ms": null,
+          "llm_ms": 2807.7,
+          "wait_ms": 54329.0,
+          "llm_calls": 3,
+          "llm_tokens": 4045,
+          "tool_ms": 1.0,
+          "tts_ms": null,
+          "total_ms": 57138.2
+        }
+      ],
+      "transcript": [
+        {
+          "script_idx": 1,
+          "user": "Hi, I need a flat in Gurgaon.",
+          "reply": "Sure, what's your budget and which sectors in Gurgaon are you interested in?",
+          "asking_for": [
+            "budget_max",
+            "areas"
+          ],
+          "state": {
+            "profile": {
+              "budget_max": null,
+              "areas": [],
+              "bhk": [],
+              "move_in_date": null,
+              "commute_destination": null,
+              "furnishing": null,
+              "pets": null,
+              "tenant_type": null,
+              "parking": null
+            },
+            "missing_required": [
+              "budget_max",
+              "areas",
+              "bhk",
+              "move_in_date",
+              "commute_destination"
+            ],
+            "awaiting_confirmation": false,
+            "confirmed": false,
+            "shown_ids": [],
+            "pending_conflicts": {},
+            "changelog": []
+          },
+          "tools": [
+            {
+              "name": "update_profile",
+              "args": {
+                "change_kinds": {
+                  "areas": "new",
+                  "bhk": "new",
+                  "budget_max": "new",
+                  "commute_destination": "new",
+                  "move_in_date": "new"
+                },
+                "changes": {
+                  "areas": [],
+                  "bhk": [],
+                  "budget_max": null,
+                  "commute_destination": null,
+                  "move_in_date": null
+                }
+              },
+              "error": null
+            }
+          ]
+        },
+        {
+          "script_idx": 2,
+          "user": "Around 30,000 a month I think.",
+          "reply": "Which sectors are you looking at, and how many bedrooms do you need?",
+          "asking_for": [
+            "areas",
+            "bhk"
+          ],
+          "state": {
+            "profile": {
+              "budget_max": 30000,
+              "areas": [],
+              "bhk": [],
+              "move_in_date": null,
+              "commute_destination": null,
+              "furnishing": null,
+              "pets": null,
+              "tenant_type": null,
+              "parking": null
+            },
+            "missing_required": [
+              "areas",
+              "bhk",
+              "move_in_date",
+              "commute_destination"
+            ],
+            "awaiting_confirmation": false,
+            "confirmed": false,
+            "shown_ids": [],
+            "pending_conflicts": {},
+            "changelog": [
+              {
+                "field": "budget_max",
+                "old": null,
+                "new": 30000,
+                "kind": "new",
+                "turn": 2
+              }
+            ]
+          },
+          "tools": [
+            {
+              "name": "update_profile",
+              "args": {
+                "change_kinds": {
+                  "budget_max": "new"
+                },
+                "changes": {
+                  "budget_max": 30000
+                }
+              },
+              "error": null
+            },
+            {
+              "name": "respond_rejected",
+              "args": {
+                "text": "Which sectors are you looking at, and how many bedrooms do you need?........................................................................................................................................................................................................................................"
+              },
+              "error": "you must end the turn with the respond tool: call the respond tool via the tool-calling interface; don't write it as JSON text"
+            }
+          ]
+        },
+        {
+          "script_idx": 3,
+          "user": "Sector 56, or maybe Sector 54.",
+          "reply": "How many bedrooms do you need, when would you like to move in, and where will you be commuting to?",
+          "asking_for": [
+            "bhk",
+            "move_in_date",
+            "commute_destination"
+          ],
+          "state": {
+            "profile": {
+              "budget_max": 30000,
+              "areas": [
+                "Sector 56",
+                "Sector 54"
+              ],
+              "bhk": [],
+              "move_in_date": null,
+              "commute_destination": null,
+              "furnishing": null,
+              "pets": null,
+              "tenant_type": null,
+              "parking": null
+            },
+            "missing_required": [
+              "bhk",
+              "move_in_date",
+              "commute_destination"
+            ],
+            "awaiting_confirmation": false,
+            "confirmed": false,
+            "shown_ids": [],
+            "pending_conflicts": {},
+            "changelog": [
+              {
+                "field": "budget_max",
+                "old": null,
+                "new": 30000,
+                "kind": "new",
+                "turn": 2
+              },
+              {
+                "field": "areas",
+                "old": [],
+                "new": [
+                  "Sector 56",
+                  "Sector 54"
+                ],
+                "kind": "new",
+                "turn": 3
+              }
+            ]
+          },
+          "tools": [
+            {
+              "name": "update_profile",
+              "args": {
+                "change_kinds": {
+                  "areas": "new",
+                  "budget_max": "new"
+                },
+                "changes": {
+                  "areas": [
+                    "Sector 56",
+                    "Sector 54"
+                  ],
+                  "budget_max": 30000
+                }
+              },
+              "error": null
+            },
+            {
+              "name": "respond_rejected",
+              "args": {
+                "text": "How many bedrooms do you need, when would you like to move in, and where will you be commuting to?"
+              },
+              "error": "you must end the turn with the respond tool: call the respond tool via the tool-calling interface; don't write it as JSON text"
+            }
+          ]
+        },
+        {
+          "script_idx": 4,
+          "user": "2 BHK.",
+          "reply": "When would you like to move in, and where will you be commuting to?",
+          "asking_for": [
+            "move_in_date",
+            "commute_destination"
+          ],
+          "state": {
+            "profile": {
+              "budget_max": 30000,
+              "areas": [
+                "Sector 56",
+                "Sector 54"
+              ],
+              "bhk": [
+                2
+              ],
+              "move_in_date": null,
+              "commute_destination": null,
+              "furnishing": null,
+              "pets": null,
+              "tenant_type": null,
+              "parking": null
+            },
+            "missing_required": [
+              "move_in_date",
+              "commute_destination"
+            ],
+            "awaiting_confirmation": false,
+            "confirmed": false,
+            "shown_ids": [],
+            "pending_conflicts": {},
+            "changelog": [
+              {
+                "field": "budget_max",
+                "old": null,
+                "new": 30000,
+                "kind": "new",
+                "turn": 2
+              },
+              {
+                "field": "areas",
+                "old": [],
+                "new": [
+                  "Sector 56",
+                  "Sector 54"
+                ],
+                "kind": "new",
+                "turn": 3
+              },
+              {
+                "field": "bhk",
+                "old": [],
+                "new": [
+                  2
+                ],
+                "kind": "new",
+                "turn": 4
+              }
+            ]
+          },
+          "tools": [
+            {
+              "name": "update_profile",
+              "args": {
+                "change_kinds": {
+                  "bhk": "new"
+                },
+                "changes": {
+                  "bhk": [
+                    2
+                  ]
+                }
+              },
+              "error": null
+            },
+            {
+              "name": "respond_rejected",
+              "args": {
+                "text": "When would you like to move in, and where will you be commuting to?We need to update profile with move_in_date and commute_destination after user answers.When do you plan to move in, and what's your daily commute destination?"
+              },
+              "error": "you must end the turn with the respond tool: call the respond tool via the tool-calling interface; don't write it as JSON text"
+            }
+          ]
+        },
+        {
+          "script_idx": 5,
+          "user": "Probably the 1st of December. My office is at Cyber City.",
+          "reply": "Let me confirm: a 2 BHK in Sector 56 or Sector 54, budget up to 30,000 rupees a month, moving in on 1 December 2026, commuting to Cyber City. Furnishing, pets, tenant type and parking are open unless you tell me otherwise. Shall I search with this?",
+          "asking_for": [],
+          "state": {
+            "profile": {
+              "budget_max": 30000,
+              "areas": [
+                "Sector 56",
+                "Sector 54"
+              ],
+              "bhk": [
+                2
+              ],
+              "move_in_date": "2026-12-01",
+              "commute_destination": "Cyber City",
+              "furnishing": null,
+              "pets": null,
+              "tenant_type": null,
+              "parking": null
+            },
+            "missing_required": [],
+            "awaiting_confirmation": true,
+            "confirmed": false,
+            "shown_ids": [],
+            "pending_conflicts": {},
+            "changelog": [
+              {
+                "field": "budget_max",
+                "old": null,
+                "new": 30000,
+                "kind": "new",
+                "turn": 2
+              },
+              {
+                "field": "areas",
+                "old": [],
+                "new": [
+                  "Sector 56",
+                  "Sector 54"
+                ],
+                "kind": "new",
+                "turn": 3
+              },
+              {
+                "field": "bhk",
+                "old": [],
+                "new": [
+                  2
+                ],
+                "kind": "new",
+                "turn": 4
+              },
+              {
+                "field": "commute_destination",
+                "old": null,
+                "new": "Cyber City",
+                "kind": "new",
+                "turn": 5
+              },
+              {
+                "field": "move_in_date",
+                "old": null,
+                "new": "2026-12-01",
+                "kind": "new",
+                "turn": 5
+              }
+            ]
+          },
+          "tools": [
+            {
+              "name": "update_profile",
+              "args": {
+                "change_kinds": {
+                  "bhk": "new",
+                  "commute_destination": "new",
+                  "move_in_date": "new"
+                },
+                "changes": {
+                  "bhk": [
+                    2
+                  ],
+                  "commute_destination": "Cyber City",
+                  "move_in_date": "2026-12-01"
+                }
+              },
+              "error": null
+            },
+            {
+              "name": "read_back_profile",
+              "args": {},
+              "error": null
+            }
+          ]
+        },
+        {
+          "script_idx": 6,
+          "user": "Yes, that's right.",
+          "reply": "Here are the listings matching your preferences.\n  L021 · 2 BHK, Sector 56 (Golf Course Extension Road) · ₹28,000/mo (deposit ₹84,000) · unfurnished · from 2026-11-05 — 9.5 km commute to Cyber City.",
+          "asking_for": [],
+          "state": {
+            "profile": {
+              "budget_max": 30000,
+              "areas": [
+                "Sector 56",
+                "Sector 54"
+              ],
+              "bhk": [
+                2
+              ],
+              "move_in_date": "2026-12-01",
+              "commute_destination": "Cyber City",
+              "furnishing": null,
+              "pets": null,
+              "tenant_type": null,
+              "parking": null
+            },
+            "missing_required": [],
+            "awaiting_confirmation": false,
+            "confirmed": true,
+            "shown_ids": [
+              "L021"
+            ],
+            "pending_conflicts": {},
+            "changelog": [
+              {
+                "field": "budget_max",
+                "old": null,
+                "new": 30000,
+                "kind": "new",
+                "turn": 2
+              },
+              {
+                "field": "areas",
+                "old": [],
+                "new": [
+                  "Sector 56",
+                  "Sector 54"
+                ],
+                "kind": "new",
+                "turn": 3
+              },
+              {
+                "field": "bhk",
+                "old": [],
+                "new": [
+                  2
+                ],
+                "kind": "new",
+                "turn": 4
+              },
+              {
+                "field": "commute_destination",
+                "old": null,
+                "new": "Cyber City",
+                "kind": "new",
+                "turn": 5
+              },
+              {
+                "field": "move_in_date",
+                "old": null,
+                "new": "2026-12-01",
+                "kind": "new",
+                "turn": 5
+              }
+            ]
+          },
+          "tools": [
+            {
+              "name": "confirm_profile",
+              "args": {
+                "renter_quote": "Yes, that's right."
+              },
+              "error": null
+            },
+            {
+              "name": "search_listings",
+              "args": {},
+              "error": null
+            },
+            {
+              "name": "respond_rejected",
+              "args": {
+                "text": "Here are some options for you:\n\n- L021: 9.5 km commute to Cyber City."
+              },
+              "error": "you must end the turn with the respond tool: call the respond tool via the tool-calling interface; don't write it as JSON text"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "case": "12_city_level_area_5bhk_relative_date",
+      "model": "openai/gpt-oss-120b",
+      "reasoning_effort": "low",
+      "commit": "494397ef78da4b8f6283783f223974544dc197ae",
+      "dirty": false,
+      "status": "PASS",
+      "note": "",
+      "checks": {
+        "a_asked_before_search": [],
+        "b_final_profile": [],
+        "c_grounding": [],
+        "d_no_match": [],
+        "e_case_specific": [],
+        "f_no_fallback": []
+      },
+      "tokens": 12999,
+      "prompt_tokens": 12376,
+      "completion_tokens": 623,
+      "llm_calls": 9,
+      "seconds": 136.9,
+      "turn_timings": [
+        {
+          "stt_ms": null,
+          "llm_ms": 1599.6,
+          "wait_ms": 8405.0,
+          "llm_calls": 2,
+          "llm_tokens": 3549,
+          "tool_ms": 0.2,
+          "tts_ms": null,
+          "total_ms": 10005.1
+        },
+        {
+          "stt_ms": null,
+          "llm_ms": 3009.0,
+          "wait_ms": 55171.0,
+          "llm_calls": 3,
+          "llm_tokens": 3628,
+          "tool_ms": 0.2,
+          "tts_ms": null,
+          "total_ms": 58180.6
+        },
+        {
+          "stt_ms": null,
+          "llm_ms": 1042.7,
+          "wait_ms": 1938.0,
+          "llm_calls": 1,
+          "llm_tokens": 1843,
+          "tool_ms": 0.2,
+          "tts_ms": null,
+          "total_ms": 2981.2
+        },
+        {
+          "stt_ms": null,
+          "llm_ms": 9275.3,
+          "wait_ms": 56500.0,
+          "llm_calls": 3,
+          "llm_tokens": 3979,
+          "tool_ms": 0.9,
+          "tts_ms": null,
+          "total_ms": 65776.7
+        }
+      ],
+      "transcript": [
+        {
+          "script_idx": 1,
+          "user": "I want a flat in Gurgaon, 5 BHK, ready to move in within a week.",
+          "reply": "Sure, what's your budget, preferred sectors, and where you'll commute to?",
+          "asking_for": [
+            "budget_max",
+            "areas",
+            "commute_destination"
+          ],
+          "state": {
+            "profile": {
+              "budget_max": null,
+              "areas": [],
+              "bhk": [
+                5
+              ],
+              "move_in_date": "2026-11-09",
+              "commute_destination": null,
+              "furnishing": null,
+              "pets": null,
+              "tenant_type": null,
+              "parking": null
+            },
+            "missing_required": [
+              "budget_max",
+              "areas",
+              "commute_destination"
+            ],
+            "awaiting_confirmation": false,
+            "confirmed": false,
+            "shown_ids": [],
+            "pending_conflicts": {},
+            "changelog": [
+              {
+                "field": "bhk",
+                "old": [],
+                "new": [
+                  5
+                ],
+                "kind": "new",
+                "turn": 1
+              },
+              {
+                "field": "move_in_date",
+                "old": null,
+                "new": "2026-11-09",
+                "kind": "new",
+                "turn": 1
+              }
+            ]
+          },
+          "tools": [
+            {
+              "name": "update_profile",
+              "args": {
+                "change_kinds": {
+                  "bhk": "new",
+                  "move_in_date": "new"
+                },
+                "changes": {
+                  "bhk": [
+                    5
+                  ],
+                  "move_in_date": "within a week"
+                }
+              },
+              "error": null
+            }
+          ]
+        },
+        {
+          "script_idx": 2,
+          "user": "My budget is 60000 a month.",
+          "reply": "Sure, which sectors in Gurgaon are you interested in, and where will you be commuting from?",
+          "asking_for": [
+            "areas",
+            "commute_destination"
+          ],
+          "state": {
+            "profile": {
+              "budget_max": 60000,
+              "areas": [],
+              "bhk": [
+                5
+              ],
+              "move_in_date": "2026-11-09",
+              "commute_destination": null,
+              "furnishing": null,
+              "pets": null,
+              "tenant_type": null,
+              "parking": null
+            },
+            "missing_required": [
+              "areas",
+              "commute_destination"
+            ],
+            "awaiting_confirmation": false,
+            "confirmed": false,
+            "shown_ids": [],
+            "pending_conflicts": {},
+            "changelog": [
+              {
+                "field": "bhk",
+                "old": [],
+                "new": [
+                  5
+                ],
+                "kind": "new",
+                "turn": 1
+              },
+              {
+                "field": "move_in_date",
+                "old": null,
+                "new": "2026-11-09",
+                "kind": "new",
+                "turn": 1
+              },
+              {
+                "field": "budget_max",
+                "old": null,
+                "new": 60000,
+                "kind": "new",
+                "turn": 2
+              }
+            ]
+          },
+          "tools": [
+            {
+              "name": "update_profile",
+              "args": {
+                "change_kinds": {
+                  "budget_max": "new"
+                },
+                "changes": {
+                  "budget_max": 60000
+                }
+              },
+              "error": null
+            },
+            {
+              "name": "respond_rejected",
+              "args": {
+                "text": "Got it. Which sectors in Gurgaon are you interested in, and where will you be commuting from?"
+              },
+              "error": "you must end the turn with the respond tool: call the respond tool via the tool-calling interface; don't write it as JSON text"
+            }
+          ]
+        },
+        {
+          "script_idx": 3,
+          "user": "Sector 54 or Sector 56. My office is at Cyber City.",
+          "reply": "Let me confirm: a 5 BHK in Sector 54 or Sector 56, budget up to 60,000 rupees a month, moving in on 9 November 2026, commuting to Cyber City. Furnishing, pets, tenant type and parking are open unless you tell me otherwise. Shall I search with this?",
+          "asking_for": [],
+          "state": {
+            "profile": {
+              "budget_max": 60000,
+              "areas": [
+                "Sector 54",
+                "Sector 56"
+              ],
+              "bhk": [
+                5
+              ],
+              "move_in_date": "2026-11-09",
+              "commute_destination": "Cyber City",
+              "furnishing": null,
+              "pets": null,
+              "tenant_type": null,
+              "parking": null
+            },
+            "missing_required": [],
+            "awaiting_confirmation": true,
+            "confirmed": false,
+            "shown_ids": [],
+            "pending_conflicts": {},
+            "changelog": [
+              {
+                "field": "bhk",
+                "old": [],
+                "new": [
+                  5
+                ],
+                "kind": "new",
+                "turn": 1
+              },
+              {
+                "field": "move_in_date",
+                "old": null,
+                "new": "2026-11-09",
+                "kind": "new",
+                "turn": 1
+              },
+              {
+                "field": "budget_max",
+                "old": null,
+                "new": 60000,
+                "kind": "new",
+                "turn": 2
+              },
+              {
+                "field": "areas",
+                "old": [],
+                "new": [
+                  "Sector 54",
+                  "Sector 56"
+                ],
+                "kind": "new",
+                "turn": 3
+              },
+              {
+                "field": "commute_destination",
+                "old": null,
+                "new": "Cyber City",
+                "kind": "new",
+                "turn": 3
+              }
+            ]
+          },
+          "tools": [
+            {
+              "name": "update_profile",
+              "args": {
+                "change_kinds": {
+                  "areas": "new",
+                  "commute_destination": "new"
+                },
+                "changes": {
+                  "areas": [
+                    "Sector 54",
+                    "Sector 56"
+                  ],
+                  "commute_destination": "Cyber City"
+                }
+              },
+              "error": null
+            },
+            {
+              "name": "read_back_profile",
+              "args": {},
+              "error": null
+            }
+          ]
+        },
+        {
+          "script_idx": 4,
+          "user": "Yes, that's right.",
+          "reply": "No matches found. You could increase the budget, expand the sector list, or be flexible on the move‑in date. Which would you like to adjust?",
+          "asking_for": [],
+          "state": {
+            "profile": {
+              "budget_max": 60000,
+              "areas": [
+                "Sector 54",
+                "Sector 56"
+              ],
+              "bhk": [
+                5
+              ],
+              "move_in_date": "2026-11-09",
+              "commute_destination": "Cyber City",
+              "furnishing": null,
+              "pets": null,
+              "tenant_type": null,
+              "parking": null
+            },
+            "missing_required": [],
+            "awaiting_confirmation": false,
+            "confirmed": true,
+            "shown_ids": [],
+            "pending_conflicts": {},
+            "changelog": [
+              {
+                "field": "bhk",
+                "old": [],
+                "new": [
+                  5
+                ],
+                "kind": "new",
+                "turn": 1
+              },
+              {
+                "field": "move_in_date",
+                "old": null,
+                "new": "2026-11-09",
+                "kind": "new",
+                "turn": 1
+              },
+              {
+                "field": "budget_max",
+                "old": null,
+                "new": 60000,
+                "kind": "new",
+                "turn": 2
+              },
+              {
+                "field": "areas",
+                "old": [],
+                "new": [
+                  "Sector 54",
+                  "Sector 56"
+                ],
+                "kind": "new",
+                "turn": 3
+              },
+              {
+                "field": "commute_destination",
+                "old": null,
+                "new": "Cyber City",
+                "kind": "new",
+                "turn": 3
+              }
+            ]
+          },
+          "tools": [
+            {
+              "name": "confirm_profile",
+              "args": {
+                "renter_quote": "Yes, that's right."
+              },
+              "error": null
+            },
+            {
+              "name": "search_listings",
+              "args": {},
+              "error": null
+            },
+            {
+              "name": "respond_rejected",
+              "args": {
+                "text": "No matches found. You could consider increasing the budget, looking at nearby sectors, or being flexible on the move‑in date. Which would you like to adjust?Would you like to raise the budget, expand the sector list, or allow a later move‑in date?....................................................."
+              },
+              "error": "you must end the turn with the respond tool: call the respond tool via the tool-calling interface; don't write it as JSON text"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
