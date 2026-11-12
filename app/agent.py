@@ -92,6 +92,22 @@ def _as_json_object(text: str) -> Optional[dict]:
     return obj if isinstance(obj, dict) else None
 
 
+NO_TOOL_CALL = ("you must end the turn with the respond tool: call the respond tool via the tool-calling interface; "
+                "don't write it as JSON text")
+
+
+def _respond_payload_from_text(content: Optional[str]) -> Optional[dict]:
+    """The respond arguments when the model wrote its final call as JSON text instead of a tool call:
+    either the bare arguments ({"reply": ...}) or wrapped as {"name": "respond"|"response", "arguments": {...}}.
+    Only valid JSON is read (malformed text is never repaired), and the result is validated like any respond."""
+    obj = _as_json_object(content)
+    if not obj:
+        return None
+    if obj.get("name") in ("respond", "response") and isinstance(obj.get("arguments"), dict):
+        return obj["arguments"]
+    return obj if "reply" in obj else None
+
+
 @dataclass
 class TurnResult:
     reply: str
@@ -163,11 +179,11 @@ class Agent:
 
                 pending: Optional[tuple[Optional[str], dict]] = None  # (tool_call_id, respond args)
                 if not resp.tool_calls:
-                    payload = _as_json_object(resp.content)  # some models send the reply as bare JSON
-                    if payload and "reply" in payload:
-                        pending = (None, payload)
+                    payload = _respond_payload_from_text(resp.content)  # some models write the call as JSON text
+                    if payload is not None:
+                        pending = (None, payload)  # validated below like any respond call
                     else:
-                        self._reject(messages, ctx, None, {"text": resp.content[:300]}, "you must end the turn by calling the respond tool")
+                        self._reject(messages, ctx, None, {"text": resp.content[:300]}, NO_TOOL_CALL)
                         continue
                 lookup = False
                 for call in resp.tool_calls:  # state-changing tools first; respond is held back

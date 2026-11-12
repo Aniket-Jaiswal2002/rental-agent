@@ -335,3 +335,46 @@ def test_conflict_question_satisfies_the_rule_without_a_missing_field():
     a.turn("budget 30000")
     r = a.turn("budget 20000")
     assert r.asking_for == ["budget_max"] and r.timings.llm_calls == 1
+
+
+# -- the final call written as JSON text instead of a tool call (eval case 12) --------------------------
+
+class TextThenScriptLLM(FakeLLM):
+    """Script items that are a str are returned as plain assistant text instead of tool calls."""
+
+    def chat(self, messages, tools):
+        if isinstance(self.script[0], str):
+            self.calls.append(json.loads(json.dumps(messages, default=str)))
+            text = self.script.pop(0)
+            return LLMResponse(content=text, tool_calls=[], raw_message={"role": "assistant", "content": text}, elapsed_ms=1.0)
+        return super().chat(messages, tools)
+
+
+ASK = {"asking_for": ["budget_max", "areas"], "reply": "What's your budget and which sectors?", "shortlist": []}
+
+
+def test_respond_wrapped_as_json_text_is_unwrapped_and_accepted():
+    for name in ("respond", "response"):
+        a = Agent(TextThenScriptLLM([[upd({"bhk": [5]}, {"bhk": "new"})], json.dumps({"name": name, "arguments": ASK})]))
+        r = a.turn("5 BHK please")
+        assert r.reply == ASK["reply"] and r.asking_for == ASK["asking_for"] and not r.fallback
+        assert r.timings.llm_calls == 2 and not any(t["name"] == "respond_rejected" for t in r.tool_log)
+
+
+def test_unwrapped_json_text_is_still_validated_as_respond():
+    bad = {"name": "respond", "arguments": {**ASK, "asking_for": []}}  # fields missing but nothing asked
+    a = Agent(TextThenScriptLLM([json.dumps(bad), json.dumps({"name": "respond", "arguments": ASK})]))
+    r = a.turn("hi")
+    assert "required fields are still missing" in r.tool_log[0]["result"]["error"] and r.asking_for == ASK["asking_for"]
+
+
+def test_malformed_json_text_and_other_tool_names_are_rejected_with_a_clear_instruction():
+    malformed = '{"name": "respond", "arguments": ' + json.dumps(ASK) + ']"}'  # as seen in the c3b7539 pass
+    other = json.dumps({"name": "update_profile", "arguments": {"changes": {"bhk": [2]}, "change_kinds": {"bhk": "new"}}})
+    a = Agent(TextThenScriptLLM([malformed, other, "Just prose.", [respond(ASK["reply"], asking_for=ASK["asking_for"])]]))
+    r = a.turn("hi")
+    rejected = [t for t in r.tool_log if t["name"] == "respond_rejected"]
+    assert len(rejected) == 3 and r.state["profile"]["bhk"] == [] and r.reply == ASK["reply"]
+    assert all("call the respond tool via the tool-calling interface; don't write it as JSON text" in t["result"]["error"]
+               for t in rejected)
+    assert "don't write it as JSON text" in a.llm.calls[-1][-1]["content"]  # the model is told so
