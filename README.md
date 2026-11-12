@@ -1,5 +1,7 @@
 # Voice renter-intake agent
 
+**Demo video:** [link] (placeholder: to be added)
+
 A small voice-first agent that takes a renter from "I need a home" to a confirmed search profile and a grounded
 top-3 shortlist of Gurugram rentals. It is built to show memory, tool use, planning, evals and messy real-world
 input (Hinglish, corrections, contradictions, vague requests) working end to end.
@@ -142,18 +144,19 @@ LLM calls per turn by design: **1** for an intake turn or a correction (update a
 read-back is rendered in code), **2** for a confirmation turn (confirm, then the shortlist after the code runs
 the search).
 
-<!-- LATENCY:START — numbers from the eval pass (evals/results.md and its raw file); to be updated from the c3b7539 pass -->
-Measured on the headline eval pass (`ad8f997`, text mode, 41 turns, 91 LLM calls, `reasoning_effort` low):
+<!-- LATENCY:START — numbers computed from the raw file of the c3b7539 full pass (evals/raw/20261112-143333.json) -->
+Measured on the full eval pass on `c3b7539` (text mode, 41 turns, 87 LLM calls, `reasoning_effort` low):
 
 | Model time | p50 | p95 |
 |---|---|---|
-| Per turn (all of the turn's LLM calls) | 2.1 s | 6.2 s |
+| Per turn (all of the turn's LLM calls) | 1.6 s | 4.0 s |
 
-That is 2.2 LLM calls per turn on average, about 1.1 s of model time per call (mean). Turn totals from the
+That is 2.1 LLM calls per turn on average, about 0.9 s of model time per call (mean). Turn totals from the
 free-tier eval are not reported as latency: they include client-side quota-pacing sleeps (a median of about
-40 s per turn), which is waiting for Groq's token-per-minute cap, not model or agent time. STT and TTS are not
-measured in the text-mode eval. There is no separate before/after benchmark; I chose not to spend live calls on
-one.
+17 s per turn), which is waiting for Groq's token-per-minute cap, not model or agent time. STT and TTS are not
+measured in the text-mode eval, and there is no separate before/after benchmark. The code has changed since
+this pass (two reverts and two fixes, see the eval table), so these numbers describe `c3b7539`, not the latest
+commit.
 <!-- LATENCY:END -->
 
 ## Design decisions
@@ -220,6 +223,7 @@ That shaped a few choices:
   also labelled an explicit "Sorry, 30000 is the right budget" as a conflict and asked again; that was a
   single run and did not reproduce at medium.- **Trade-off sentences are model-written.** Their numbers come from tool-result fields, but the sentence
   itself is not verified.
+- **Last full pass is on `c3b7539`;** the later fixes were verified by re-running cases 01 and 12 only.
 - **Small eval sample.** One run per case on a non-deterministic model: a pass rate from 12 runs is indicative,
   not a benchmark.
 - **No persistence.** Sessions live in memory, and there is no auth.
