@@ -39,7 +39,8 @@ def _tally(results: list[dict]) -> str:
     return f"{sum(r['status'] == 'PASS' for r in real)}/{len(real)}"
 
 
-def section(headline: dict, followups: list[dict], final: dict | None = None, final_pending: str | None = None) -> str:
+def section(headline: dict, followups: list[dict], final: dict | None = None, final_pending: str | None = None,
+            note: str | None = None) -> str:
     cases = list(dict.fromkeys(r["case"] for r in headline["results"]))
     by_case = lambda raws, c: [r for raw in raws for r in raw["results"] if r["case"] == c]
     summary = [f"**Headline: {_tally(headline['results'])} runs passed** on the first full pass ({_commits([headline])}, "
@@ -56,11 +57,20 @@ def section(headline: dict, followups: list[dict], final: dict | None = None, fi
         cols.append(f"After fix {_commits(followups)}")
     if final:
         done = "" if final.get("complete", True) else " so far (pass not complete)"
-        summary.append(f"Full pass on {_commits([final])}: {_tally(final['results'])} passed{done}.")
+        ok = lambda raws, c: bool(by_case(raws, c)) and all(r["status"] == "PASS" for r in by_case(raws, c))
+        ran = [c for c in cases if by_case([final], c)]
+        groups = [("fixed since the headline", [c for c in ran if not ok([headline], c) and ok([final], c)]),
+                  ("newly failing", [c for c in ran if ok([headline], c) and not ok([final], c)]),
+                  ("still failing", [c for c in ran if not ok([headline], c) and not ok([final], c)])]
+        detail = "; ".join(f"{name}: {', '.join(c[:2] for c in cs)}" for name, cs in groups if cs)
+        summary.append(f"Full pass on {_commits([final])}: {_tally(final['results'])} passed{done}"
+                       + (f" ({detail})." if detail else "."))
         cols.append(f"Final {_commits([final])}")
     elif final_pending:
         summary.append(f"Full pass on `{final_pending}`: **running**, not in the table yet.")
         cols.append(f"Final `{final_pending}`")
+    if note:
+        summary.append(note.strip())
     summary.append("The headline never changes; later runs are shown beside it.")
 
     lines = [" ".join(summary), "", "| Case | " + " | ".join(cols) + " |", "|---|" + "---|" * len(cols)]
@@ -92,12 +102,13 @@ def main() -> None:
     ap.add_argument("--followups", nargs="*", default=[], help="raw files of after-fix re-runs, oldest first")
     ap.add_argument("--final", help="raw file of the full pass on the final commit")
     ap.add_argument("--final-pending", metavar="SHA", help="the final pass is still running on this commit")
+    ap.add_argument("--note", help="one sentence added to the summary line, e.g. pointing at a known limitation")
     args = ap.parse_args()
     if args.final and args.final_pending:
         raise SystemExit("use --final or --final-pending, not both")
     load = lambda p: load_raw(Path(p))
     content = section(load(args.headline), [load(p) for p in args.followups],
-                      load(args.final) if args.final else None, args.final_pending)
+                      load(args.final) if args.final else None, args.final_pending, args.note)
     readme = ROOT / "README.md"
     readme.write_text(fill(readme.read_text(encoding="utf-8"), content), encoding="utf-8", newline="\n")
     print("README.md eval section updated")

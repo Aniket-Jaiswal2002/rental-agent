@@ -122,8 +122,10 @@ def test_fill_readme_compact_table_from_raw_passes():
     assert "[evals/results.md](evals/results.md)" in sec and "Prompt size" not in sec
 
     final = raw([run("01_a", "PASS", commit="c" * 40), run("03_b", "FAIL", commit="c" * 40), run("06_c", "PASS", commit="c" * 40)])
-    done = section(head, follow, final=final)
-    assert "Full pass on `ccccccc`: 2/3 passed." in done and "| 06_c | FAIL | PASS | PASS |" in done
+    final["results"][0]["status"] = "FAIL"  # 01 passed in the headline, fails now
+    done = section(head, follow, final=final, note="Case 03 is a known limitation.")
+    assert ("Full pass on `ccccccc`: 1/3 passed (fixed since the headline: 06; newly failing: 01; still failing: 03). "
+            "Case 03 is a known limitation.") in done and "| 06_c | FAIL | PASS | PASS |" in done
     assert done.startswith("**Headline: 1/3 runs passed**")  # the final pass never replaces the headline
 
     readme = f"intro\n{START} old note -->\n> PLACEHOLDER\n{END}\noutro\n"
