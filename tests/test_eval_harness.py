@@ -57,6 +57,7 @@ def test_no_match_case_passes_only_when_agent_says_so():
 def test_sloppy_agent_is_caught():
     """Agent that never asks about the missing fields and just chats."""
     case = CASES["01_vague_renter"]
-    llm = FakeLLM([[respond("Tell me more!")]] * 20)
+    llm = FakeLLM([[respond("Tell me more!")]] * 100)  # the validator bounces every one until the turn falls back
     results = run_checks(case, play(case, llm))
     assert results["a_asked_before_search"] and results["b_final_profile"] and results["e_case_specific"]
+    assert results["f_no_fallback"]

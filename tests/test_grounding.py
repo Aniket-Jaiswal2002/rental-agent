@@ -309,3 +309,29 @@ def test_read_back_open_fields_read_naturally():
     assert "Furnishing, pets, tenant type and parking are open unless" in read_back_text(p)
     p = RenterProfile.model_validate({**FULL, "furnishing": "unfurnished", "pets": False, "tenant_type": "family"})
     assert "Parking is open unless" in read_back_text(p)
+
+
+# -- while required fields are missing, the reply must ask for one (eval case 01) ----------------------
+
+def test_reply_without_asking_for_is_rejected_while_required_fields_are_missing():
+    a = Agent(FakeLLM([[upd({"budget_max": 30000}, {"budget_max": "new"}), respond("Got it, thanks!")],
+                       [respond("Thanks! Anything else?", asking_for=["furnishing"])],  # optional field only: still rejected
+                       [respond("Which sectors, and how many bedrooms?", asking_for=["areas", "bhk"])]]))
+    r = a.turn("around 30k")
+    rejected = [t for t in r.tool_log if t["name"] == "respond_rejected"]
+    assert len(rejected) == 2 and "required fields are still missing" in rejected[0]["result"]["error"]
+    assert r.asking_for == ["areas", "bhk"] and r.timings.llm_calls == 3
+
+
+def test_listing_lookup_turn_needs_no_question_even_with_fields_missing():
+    a = Agent(FakeLLM([[("get_listing", {"listing_id": "L099"})], [respond("Listing L099 doesn't exist.")]]))
+    r = a.turn("what's the rent of L099?")
+    assert r.reply == "Listing L099 doesn't exist." and r.asking_for == [] and not r.fallback
+
+
+def test_conflict_question_satisfies_the_rule_without_a_missing_field():
+    a = Agent(FakeLLM([[upd({"budget_max": 30000}, {"budget_max": "new"}), respond("Which area?", asking_for=["areas"])],
+                       [upd({"budget_max": 20000}, {"budget_max": "conflict"}), respond("30000 or 20000?", asking_for=["budget_max"])]]))
+    a.turn("budget 30000")
+    r = a.turn("budget 20000")
+    assert r.asking_for == ["budget_max"] and r.timings.llm_calls == 1

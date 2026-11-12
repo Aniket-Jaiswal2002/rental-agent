@@ -218,10 +218,7 @@ That shaped a few choices:
   (old -> new) and the profile is read back before any search. It happened at both `reasoning_effort` low and
   medium; I chose not to add a prompt rule for it and kept low. In one after-fix run at low effort the model
   also labelled an explicit "Sorry, 30000 is the right budget" as a conflict and asked again; that was a
-  single run and did not reproduce at medium.
-- **A sentence repeated inside a plain-text reply is not caught.** The guard rejects empty, punctuation-only
-  or previous-reply text, but not one question repeated twice in one reply (seen once, in that same low run).
-- **Trade-off sentences are model-written.** Their numbers come from tool-result fields, but the sentence
+  single run and did not reproduce at medium.- **Trade-off sentences are model-written.** Their numbers come from tool-result fields, but the sentence
   itself is not verified.
 - **Small eval sample.** One run per case on a non-deterministic model: a pass rate from 12 runs is indicative,
   not a benchmark.

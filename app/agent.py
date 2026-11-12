@@ -258,6 +258,11 @@ class Agent:
         unresolved = [f for f in ctx.conflicts if f not in asking]
         if unresolved:
             return f"the renter contradicted themselves on {unresolved}: ask which is right and put it in asking_for"
+        missing = s.profile.missing_required()
+        looked_up = any(t["name"] == "get_listing" for t in ctx.tool_log)  # answering about a listing: no question owed
+        if missing and not ctx.conflicts and not looked_up and not set(asking) & set(missing):
+            return (f"required fields are still missing ({missing}): ask for one or two of them in the reply and "
+                    f"list exactly those in asking_for")
         citable = ctx.citable_ids(s)
         seen = set()
         for item in shortlist:
