@@ -108,30 +108,59 @@ def json_load(p):
     return json.loads(p.read_text(encoding="utf-8"))
 
 
-def test_fill_readme_compact_table_from_raw_passes():
-    from scripts.fill_readme import END, START, fill, section
+def test_fill_readme_lead_sentence_then_table_hashes_only_in_headers():
+    from scripts.fill_readme import fill, section
     head = raw([run("01_a", "PASS"), run("03_b", "FAIL"), run("06_c", "FAIL")])
     follow = [raw([run("03_b", "FAIL", commit=B), run("06_c", "PASS", commit=B)]), raw([run("03_b", "FAIL", commit=B, effort="medium")])]
     sec = section(head, follow, final_pending="ccccccc")
-    assert sec.startswith("**Headline: 1/3 runs passed** on the first full pass (`aaaaaaa`, 1 run per case).")
-    assert "2 cases were re-run: now passing after a headline failure: 06; still failing: 03." in sec
+    assert sec.startswith("On the first full pass, 1 of the 3 scripted conversations passed (1 run per case).")
+    assert "A newer full pass is running" in sec
     assert "| Case | Headline `aaaaaaa` | After fix `bbbbbbb` | Full pass `ccccccc` |" in sec
-    assert "| 01_a | PASS | — | running |" in sec
     assert "| 03_b | FAIL | FAIL (effort low), FAIL (effort medium) | running |" in sec
-    assert "| 06_c | FAIL | PASS | running |" in sec
-    assert "[evals/results.md](evals/results.md)" in sec and "Prompt size" not in sec
+    assert "[evals/results.md](evals/results.md)" in sec
 
-    final = raw([run("01_a", "PASS", commit="c" * 40), run("03_b", "FAIL", commit="c" * 40), run("06_c", "PASS", commit="c" * 40)])
-    final["results"][0]["status"] = "FAIL"  # 01 passed in the headline, fails now
-    done = section(head, follow, final=final, note="Case 03 is a known limitation.")
-    assert ("Full pass on `ccccccc`: 1/3 passed (fixed since the headline: 06; newly failing: 01; still failing: 03). "
-            "Case 03 is a known limitation.") in done and "| 06_c | FAIL | PASS | PASS |" in done
-    assert done.startswith("**Headline: 1/3 runs passed**")  # the final pass never replaces the headline
+    final = raw([run("01_a", "FAIL", commit="c" * 40), run("03_b", "FAIL", commit="c" * 40), run("06_c", "PASS", commit="c" * 40)])
+    later = [raw([run("01_a", "PASS", commit="d" * 40)])]
+    done = section(head, follow, final=final, later=later, limitations=["03"])
+    lead = done.split("\n\n")[0]
+    assert ("The latest full pass scored 1/3: 06 now passes; 01 newly failed (it passed again on a re-run after fixes); "
+            "case 03, which is a documented limitation, still fails.") in lead
+    assert "`" not in lead  # commit ids live only in the table headers
+    assert "| 01_a | PASS | — | FAIL | PASS |" in done and done.startswith("On the first full pass, 1 of the 3")
 
-    readme = f"intro\n{START} old note -->\n> PLACEHOLDER\n{END}\noutro\n"
+    readme = "intro\n<!-- EVAL-RESULTS:START old note -->\n> PLACEHOLDER\n<!-- EVAL-RESULTS:END -->\noutro\n"
     out = fill(readme, sec)
-    assert "PLACEHOLDER" not in out and out.startswith("intro\n") and out.endswith(f"{END}\noutro\n")
-    assert fill(out, done).count("**Headline:") == 1  # refilling replaces
+    assert "PLACEHOLDER" not in out and out.startswith("intro\n") and out.endswith("<!-- EVAL-RESULTS:END -->\noutro\n")
+    assert fill(out, done).count("On the first full pass") == 1  # refilling replaces
+
+
+def test_fill_readme_summary_sentence_from_raw_data():
+    from scripts.fill_readme import summary_sentence
+    head = raw([run("01_a", "PASS"), run("03_b", "FAIL"), run("06_c", "FAIL")])
+    final = raw([run("01_a", "PASS", commit=B), run("03_b", "FAIL", commit=B), run("06_c", "FAIL", commit=B)])
+    assert summary_sentence(head, final, ["03"]) == (
+        "On the first full eval pass, 1 of the 3 scripted conversations passed; the latest full pass also scored 1/3, "
+        "and cases 03 and 06 failed in both.")  # 06 is not a documented limitation, so no such claim
+    final["results"][2]["status"] = "PASS"
+    assert summary_sentence(head, final, ["03"]).endswith(
+        "the latest full pass scored 2/3, and case 03, which is a documented limitation, failed in both.")
+    assert summary_sentence(head, None, []) == ("On the first full eval pass, 1 of the 3 scripted conversations passed; "
+                                                "the failures were cases 03 and 06.")
+
+
+def test_fill_readme_latency_block_from_turn_timings(monkeypatch):
+    import scripts.fill_readme as fr
+    timings = [{"total_ms": 30000, "llm_ms": ms, "llm_calls": 2, "wait_ms": 20000} for ms in (1000, 2000, 3000)]
+    final = raw([run("01_a", "PASS", commit="c" * 40, turn_timings=timings)])
+    monkeypatch.setattr(fr, "_code_commits_since", lambda sha: 0)
+    text = fr.latency(final)
+    assert "on `ccccccc` (text mode, 3 turns, 6 LLM calls, `reasoning_effort` low)" in text
+    assert "| Per turn (all of the turn's LLM calls) | 2.0 s | 3.0 s |" in text
+    assert "2.0 LLM calls per turn on average, about 1.0 s of model time per call" in text
+    assert "a median of about 20 s per turn" in text and "not the latest commit" not in text
+    monkeypatch.setattr(fr, "_code_commits_since", lambda sha: 4)
+    assert "so these numbers describe `ccccccc`, not the latest commit." in fr.latency(final)
+
 
 def test_fill_readme_later_reruns_get_their_own_column_after_the_full_pass():
     from scripts.fill_readme import section
@@ -141,4 +170,3 @@ def test_fill_readme_later_reruns_get_their_own_column_after_the_full_pass():
     sec = section(head, [], final=final, later=later)
     assert "| Case | Headline `aaaaaaa` | Full pass `ccccccc` | Re-run `ddddddd` |" in sec
     assert "| 01_a | PASS | FAIL | PASS |" in sec and "| 03_b | FAIL | FAIL | — |" in sec
-    assert "Re-runs after that pass (`ddddddd`, 1 cases only, not a full pass): passing: 01; failing: none." in sec
