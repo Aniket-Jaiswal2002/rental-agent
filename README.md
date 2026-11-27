@@ -1,7 +1,5 @@
 # Voice renter-intake agent
 
-**Demo video:** [link] (placeholder: to be added)
-
 A small voice-first agent that takes a renter from "I need a home" to a confirmed search profile and a grounded
 top-3 shortlist of Gurugram rentals. It is built to show memory, tool use, planning, evals and messy real-world
 input (Hinglish, corrections, contradictions, vague requests) working end to end.
