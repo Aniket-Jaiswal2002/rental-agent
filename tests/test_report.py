@@ -134,19 +134,19 @@ def test_fill_readme_lead_sentence_then_table_hashes_only_in_headers():
     assert fill(out, done).count("On the first full pass") == 1  # refilling replaces
 
 
-def test_fill_readme_summary_sentence_from_raw_data():
+def test_fill_readme_summary_sentence_names_failures_and_where_they_stand():
     from scripts.fill_readme import summary_sentence
-    head = raw([run("01_a", "PASS"), run("03_b", "FAIL"), run("06_c", "FAIL")])
-    final = raw([run("01_a", "PASS", commit=B), run("03_b", "FAIL", commit=B), run("06_c", "FAIL", commit=B)])
-    assert summary_sentence(head, final, ["03"]) == (
-        "On the first full eval pass, 1 of the 3 scripted conversations passed; the latest full pass also scored 1/3, "
-        "and cases 03 and 06 failed in both.")  # 06 is not a documented limitation, so no such claim
-    final["results"][2]["status"] = "PASS"
-    assert summary_sentence(head, final, ["03"]).endswith(
-        "the latest full pass scored 2/3, and case 03, which is a documented limitation, failed in both.")
-    assert summary_sentence(head, None, []) == ("On the first full eval pass, 1 of the 3 scripted conversations passed; "
-                                                "the failures were cases 03 and 06.")
-
+    head = raw([run("01_a", "PASS"), run("03_b", "FAIL"), run("06_c", "FAIL"), run("10_d", "FAIL")])
+    follow = raw([run("03_b", "FAIL", commit=B), run("06_c", "PASS", commit=B), run("10_d", "PASS", commit=B)])
+    final = raw([run("01_a", "FAIL", commit="c" * 40), run("03_b", "FAIL", commit="c" * 40),
+                 run("06_c", "PASS", commit="c" * 40), run("10_d", "PASS", commit="c" * 40)])
+    assert summary_sentence(head, [follow, final], ["03"]) == (
+        "On the first full eval pass, 1 of 4 scripted conversations passed (failed: 03, 06, 10). "
+        "06 and 10 pass after fixes; 03 is a documented limitation.")  # 01's later failure is not a headline failure
+    final["results"][3]["status"] = "FAIL"  # the most recent run decides: 10 passed after the fix, then failed again
+    assert summary_sentence(head, [follow, final], ["03"]).endswith("06 passes after fixes; 03 is a documented limitation; 10 still fails.")
+    assert summary_sentence(head, [], []).endswith("(failed: 03, 06, 10). 03, 06 and 10 were not re-run.")
+    assert summary_sentence(raw([run("01_a", "PASS")]), [], []) == "On the first full eval pass, 1 of 1 scripted conversations passed."
 
 def test_fill_readme_latency_block_from_turn_timings(monkeypatch):
     import scripts.fill_readme as fr

@@ -70,24 +70,40 @@ def _limitation_phrase(cases: list[str], limitations: list[str]) -> str:
     return f"{noun} {_num(cases)}" + (f", which {verb} a documented limitation," if documented else "")
 
 
-def summary_sentence(headline: dict, final: dict | None = None, limitations: list[str] | None = None) -> str:
-    """One plain-language sentence for the top of the README, from the raw files only."""
+def summary_sentence(headline: dict, later_passes: list[dict] | None = None, limitations: list[str] | None = None) -> str:
+    """The short result for the top of the README, from the raw files only: the first full pass, which cases it
+    failed, and where each of those failures stands in the most recent run of that case.
+
+    later_passes: every pass after the headline, oldest first (after-fix re-runs, the latest full pass, re-runs
+    after it). A headline failure counts as passing after fixes only if its most recent run passed."""
     limitations = limitations or []
     cases = list(dict.fromkeys(r["case"] for r in headline["results"]))
     p, n = _passed(headline["results"])
-    text = f"On the first full eval pass, {p} of the {n} scripted conversations passed"
-    if final:
-        fp, fn = _passed(final["results"])
-        both = [c for c in cases if not _ok([headline], c) and _by_case([final], c) and not _ok([final], c)]
-        text += f"; the latest full pass {'also ' if (fp, fn) == (p, n) else ''}scored {fp}/{fn}"
-        if both:
-            text += f", and {_limitation_phrase(both, limitations)} failed in both"
-    else:
-        failed = [c for c in cases if not _ok([headline], c)]
-        if failed:
-            phrase = _limitation_phrase(failed, limitations).rstrip(",")
-            text += f"; the {'failure was' if len(failed) == 1 else 'failures were'} {phrase}"
-    return text + "."
+    failed = [c for c in cases if not _ok([headline], c)]
+    text = f"On the first full eval pass, {p} of {n} scripted conversations passed"
+    if not failed:
+        return text + "."
+    text += f" (failed: {', '.join(c[:2] for c in failed)})."
+    latest = {c: next((raw for raw in reversed(later_passes or []) if _by_case([raw], c)), None) for c in failed}
+    fixed = [c for c in failed if latest[c] is not None and _ok([latest[c]], c)]
+    documented = [c for c in failed if c not in fixed and c[:2] in limitations]
+    rest = [c for c in failed if c not in fixed and c not in documented]
+    still = [c for c in rest if latest[c] is not None]  # re-run and failed again
+    not_rerun = [c for c in rest if latest[c] is None]
+    parts = []
+    if fixed:
+        parts.append(f"{_num(fixed)} pass{'es' if len(fixed) == 1 else ''} after fixes")
+    if documented:
+        parts.append(f"{_num(documented)} {'is' if len(documented) == 1 else 'are'} "
+                     f"{'a documented limitation' if len(documented) == 1 else 'documented limitations'}")
+    if still:
+        parts.append(f"{_num(still)} still fail{'s' if len(still) == 1 else ''}")
+    if not_rerun:
+        parts.append(f"{_num(not_rerun)} {'was' if len(not_rerun) == 1 else 'were'} not re-run")
+    if parts:
+        joined = "; ".join(parts)
+        text += f" {joined[0].upper()}{joined[1:]}."
+    return text
 
 
 def section(headline: dict, followups: list[dict], final: dict | None = None, final_pending: str | None = None,
@@ -206,9 +222,11 @@ def main() -> None:
     later = [load(p) for p in args.later]
     readme_path = ROOT / "README.md"
     readme = readme_path.read_text(encoding="utf-8")
-    readme = fill(readme, summary_sentence(head, final, args.limitations), "EVAL-SUMMARY")
-    readme = fill(readme, section(head, [load(p) for p in args.followups], final, args.final_pending, args.note,
-                                  later, args.limitations), "EVAL-RESULTS")
+    followups = [load(p) for p in args.followups]
+    after = followups + ([final] if final else []) + later  # oldest first
+    readme = fill(readme, summary_sentence(head, after, args.limitations), "EVAL-SUMMARY")
+    readme = fill(readme, section(head, followups, final, args.final_pending, args.note, later, args.limitations),
+                  "EVAL-RESULTS")
     readme = fill(readme, latency(final) if final else latency(head, "first full eval pass"), "LATENCY")
     readme_path.write_text(readme, encoding="utf-8", newline="\n")
     print("README.md generated blocks updated: EVAL-SUMMARY, EVAL-RESULTS, LATENCY")
