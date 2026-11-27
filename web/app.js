@@ -28,6 +28,33 @@ function el(tag, cls, text) {
 
 function status(text) { $("status").textContent = text; }
 
+// One shortlist card. Every value comes from the server's rendered listing; the title
+// "{bhk} BHK, {sector} ({area})" is only split for layout, and shown whole if it doesn't match.
+function card(c) {
+  const box = el("div", "card");
+  const m = /^(\d+\s*BHK),\s*(.+?)\s*\((.+)\)$/.exec(c.title || "");
+  const name = el("div", "name");
+  name.append(el("b", "", m ? m[2] : c.title), el("small", "", c.id));
+  const price = el("div", "price");
+  const rent = el("span", "rent", inr(c.rent));
+  rent.append(el("small", "", "/mo"));
+  price.append(rent, el("span", "deposit", `Deposit ${inr(c.deposit)}`));
+  const top = el("div", "top");
+  top.append(name, price);
+
+  const chips = el("div", "chips");
+  const chip = (text, cls = "") => chips.append(el("span", cls, text));
+  if (m) { chip(m[1], "key"); chip(m[3], "key"); }
+  chip(c.furnishing);
+  chip(`available ${c.available_from}`);
+  chip(`${c.distance_cyber_city_km} km to Cyber City`);
+  chip(`${c.distance_golf_course_road_km} km to Golf Course Rd`);
+
+  box.append(top, chips, el("div", "why", c.tradeoff),
+    el("div", "id", `pets ${c.pets_allowed ? "ok" : "no"} · ${c.tenant_preference} · parking ${c.parking ? "yes" : "no"}`));
+  return box;
+}
+
 function addMessage(role, text, r) {
   $("transcript").querySelector(".hint")?.remove();
   const div = el("div", "msg " + role);
@@ -35,17 +62,7 @@ function addMessage(role, text, r) {
   div.append(document.createTextNode(text));
   if (r?.shortlist?.length) {
     const cards = el("div", "cards");
-    for (const c of r.shortlist) {
-      const card = el("div", "card");
-      const top = el("div", "top");
-      top.append(el("b", "", c.title), el("span", "rent", inr(c.rent) + "/mo"));
-      card.append(top,
-        el("div", "facts", `Deposit ${inr(c.deposit)} · ${c.furnishing} · available ${c.available_from} · ` +
-          `${c.distance_cyber_city_km} km to Cyber City · ${c.distance_golf_course_road_km} km to Golf Course Rd`),
-        el("div", "why", c.tradeoff),
-        el("div", "id", `${c.id} · pets ${c.pets_allowed ? "ok" : "no"} · ${c.tenant_preference} · parking ${c.parking ? "yes" : "no"}`));
-      cards.append(card);
-    }
+    for (const c of r.shortlist) cards.append(card(c));
     div.append(cards, el("span", "via", "Prices, areas and facts above come straight from the listings data, not the model."));
   }
   if (r?.no_match) div.append(el("div", "nomatch", "No listing matches every requirement, so nothing is shown."));
@@ -53,25 +70,40 @@ function addMessage(role, text, r) {
   $("transcript").scrollTop = $("transcript").scrollHeight;
 }
 
+const STEPS = ["Collecting", "Read-back", "Confirmed", "Shortlist"];
+let shortlistShown = false; // a search result (cards or a no-match notice) was shown for the confirmed profile
+
 function renderMemory(state, askingFor = []) {
   const dl = $("profile"); dl.innerHTML = "";
   for (const [field, label] of Object.entries(LABELS)) {
     const value = fmt(field, state.profile[field]);
     const req = REQUIRED.includes(field);
-    const dd = el("dd", value === null && req ? "missing" : "", value ?? (req ? "missing" : "—"));
+    const dd = el("dd", value !== null ? "" : req ? "missing" : "open");
+    if (value === null && req) dd.append(el("span", "pill", "missing")); else dd.textContent = value ?? "—";
     if (value !== null && JSON.stringify(lastProfile[field]) !== JSON.stringify(state.profile[field])) {
       dd.classList.add("flash");
       requestAnimationFrame(() => requestAnimationFrame(() => dd.classList.remove("flash")));
     }
-    dl.append(el("dt", "", label + (req ? " *" : "")), dd);
+    const dt = el("dt", value !== null ? "filled" : req ? "missing" : "", label);
+    if (req) dt.append(el("span", "req", "*"));
+    dl.append(dt, dd);
   }
   lastProfile = state.profile;
 
-  const stage = $("stage");
+  if (!state.confirmed) shortlistShown = false;
+  const current = state.confirmed ? (shortlistShown ? 3 : 2) : state.awaiting_confirmation ? 1 : 0;
+  const stage = $("stage"); stage.innerHTML = "";
   stage.className = "stage" + (state.confirmed ? " confirmed" : "");
-  stage.textContent = state.confirmed ? "✓ Confirmed by renter: searching on this profile" :
+  const steps = el("ol", "steps");
+  STEPS.forEach((name, i) => {
+    const li = el("li", i < current ? "done" : i === current ? "current" : "");
+    li.append(el("span", "n", i < current ? "✓" : String(i + 1)), name);
+    if (i === current) li.setAttribute("aria-current", "step");
+    steps.append(li);
+  });
+  stage.append(steps, el("div", "stage-note", state.confirmed ? "✓ Confirmed by renter: searching on this profile" :
     state.awaiting_confirmation ? "Read back to renter, waiting for a yes" :
-    state.missing_required.length ? `Collecting: ${state.missing_required.length} required field(s) missing` : "Profile complete";
+    state.missing_required.length ? `Collecting: ${state.missing_required.length} required field(s) missing` : "Profile complete"));
 
   const asking = $("asking"); asking.innerHTML = "";
   if (askingFor.length) {
@@ -80,12 +112,20 @@ function renderMemory(state, askingFor = []) {
   }
 
   const ol = $("changelog"); ol.innerHTML = "";
-  for (const c of state.changelog.slice(-8).reverse()) {
-    const li = el("li", "", `turn ${c.turn}: ${LABELS[c.field]} ${fmt(c.field, c.old) ?? "—"} → ${fmt(c.field, c.new) ?? "—"}`);
-    if (c.kind === "correction") li.append(el("span", "kind", "correction"));
+  // Contradicted values the renter hasn't resolved: held by the agent, never applied to the profile.
+  for (const [field, p] of Object.entries(state.pending_conflicts || {})) {
+    const li = el("li");
+    li.append(el("span", "turn", "now"), `${LABELS[field] || field} ${fmt(field, p.stored) ?? "—"} vs ${fmt(field, p.proposed) ?? "—"}, asking`,
+      el("span", "kind conflict", "conflict"));
     ol.append(li);
   }
-  if (!state.changelog.length) ol.append(el("li", "", "nothing yet"));
+  for (const c of state.changelog.slice(-8).reverse()) {
+    const li = el("li");
+    li.append(el("span", "turn", `turn ${c.turn}`), `${LABELS[c.field]} ${fmt(c.field, c.old) ?? "—"} → ${fmt(c.field, c.new) ?? "—"}`);
+    if (c.kind) li.append(el("span", "kind " + c.kind, c.kind));
+    ol.append(li);
+  }
+  if (!ol.children.length) ol.append(el("li", "", "nothing yet"));
 }
 
 let latency = {};
@@ -95,6 +135,7 @@ function renderLatency() {
   const ms = (v) => (v === null || v === undefined ? "–" : Math.round(v) + " ms");
   const part = (label, value, cls = "") => { const s = el("span", cls); s.append(label + " ", el("b", "", value)); box.append(s); };
   const spoken = (latency.stt_ms || 0) + (latency.total_ms || 0) - (latency.wait_ms || 0) + (latency.tts_ms || 0);
+  box.append(el("span", "label", "Last turn"));
   part("STT", ms(latency.stt_ms));
   part("model", `${ms(latency.llm_ms)} · ${latency.llm_calls ?? 0} call${latency.llm_calls === 1 ? "" : "s"}`);
   part("tools", ms(latency.tool_ms));
@@ -132,6 +173,7 @@ async function sendText(text, sttMs = null) {
   if (!res.ok) { status(`Error ${res.status}: ${(await res.json()).detail}`); return; }
   const r = await res.json();
   addMessage("agent", r.reply, r);
+  if (r.state.confirmed && (r.shortlist?.length || r.no_match)) shortlistShown = true;
   renderMemory(r.state, r.asking_for);
   latency = { ...r.timings, tts_ms: null }; renderLatency();
   status("");

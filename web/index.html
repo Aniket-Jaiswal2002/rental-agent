@@ -4,34 +4,47 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Renter Intake Agent</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <header>
-    <h1>Renter intake agent</h1>
-    <span class="tag warn">Listings are SYNTHETIC demo data</span>
-    <span id="mode" class="tag" hidden></span>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">◐</span>
+      <div class="brand-text">
+        <h1>Renter intake agent</h1>
+        <span class="brand-sub">Voice intake for Gurugram rentals</span>
+      </div>
+    </div>
+    <div class="badges">
+      <span class="tag warn">Listings are SYNTHETIC demo data</span>
+      <span id="mode" class="tag" hidden></span>
+    </div>
     <button id="reset" class="ghost">New conversation</button>
   </header>
 
   <main>
-    <section class="chat">
+    <section class="chat panel">
       <div id="transcript" aria-live="polite">
         <p class="hint">Hold the button (or Space) and say what you're looking for, e.g.
           <em>"2 BHK in Sector 56, budget 30k, moving 1st December, office in Cyber City."</em> Hinglish works too.</p>
       </div>
-      <div class="controls">
-        <button id="ptt" title="Hold to talk (or hold Space)"><span class="dot"></span><span id="ptt-label">Hold to talk</span></button>
-        <form id="textform">
-          <input id="text" placeholder="…or type a message" autocomplete="off" aria-label="Message">
-          <button type="submit">Send</button>
-        </form>
+      <div class="composer">
+        <div class="controls">
+          <button id="ptt" title="Hold to talk (or hold Space)"><span class="dot"></span><span id="ptt-label">Hold to talk</span></button>
+          <form id="textform">
+            <input id="text" placeholder="…or type a message" autocomplete="off" aria-label="Message">
+            <button type="submit">Send</button>
+          </form>
+        </div>
+        <div id="status" class="status"></div>
+        <div id="latency" class="latency" aria-label="Last turn latency"></div>
       </div>
-      <div id="status" class="status"></div>
-      <div id="latency" class="latency" aria-label="Last turn latency"></div>
     </section>
 
-    <aside class="memory">
+    <aside class="memory panel">
       <div class="memory-head">
         <h2>Renter profile</h2>
         <span class="sub">agent memory, updated every turn</span>
