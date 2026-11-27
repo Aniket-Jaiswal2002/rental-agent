@@ -241,23 +241,36 @@ That shaped a few choices:
 
 ## How this was built
 
-Built with [Claude Code](https://claude.com/claude-code) as the implementation tool. I set the scope and made
-the design calls; Claude Code wrote the code and tests under those constraints and ran the checks. The decisions
-that shaped the system were mine:
+Built with [Claude Code](https://claude.com/claude-code) as the implementation tool; the commits carry its
+co-author line. Claude Code wrote the code and tests, proposed implementations and ran the checks. I set the
+scope, made the design calls, reviewed what it produced, and decided what shipped and what the results say.
 
-- **Grounding by construction**, not prose checking: structured shortlist ids, with facts rendered by the
-  server.
-- **A structural confirmation gate**: read-back → next-turn confirmation with a verbatim quote → search.
-- **Structured `change_kind`** (`new` / `correction` / `conflict`), enforced in code, replacing an earlier
-  keyword-list guard.
-- **Eval honesty rules**:
-  - deterministic checks only;
-  - a failing check means fixing the agent, not the check;
-  - rate-limited runs reported separately from failures;
-  - the headline is the first full pass on one clean commit, with model and commit SHA recorded per run;
-  - follow-up runs are listed beside the first result, never replacing it;
-  - `results.md` is rendered from raw data, never hand-edited.
-- **Fewer LLM calls per turn**: code read-back, single-response updates, auto-search after confirmation,
-  `reasoning_effort` low, and model time logged separately from quota waits.
-- **Working within free-tier limits**: token pacing, prompt trim measured with a probe, last-3-turn history
-  with the profile as memory, and resumable eval passes split across quota windows on one commit.
+**Design calls**
+
+- **Grounding by construction**, not prose checking: the model returns listing ids, and the server renders every
+  fact from the dataset.
+- **A structural confirmation gate**: read-back → confirmation on the next turn with a verbatim quote → search;
+  any profile change resets it.
+- **Evals first, with honesty rules**: deterministic checks only, no LLM judge; a failing check means fixing the
+  agent, not the check; rate-limited runs reported apart from failures.
+- **Latency as a priority**: fewer LLM calls per turn (read-back in code, update and reply in one response,
+  search run by code after confirmation), with model time logged apart from quota waits.
+- **Staying on the free tier** instead of paying for headroom, which shaped the token pacing, the prompt trim
+  and resumable eval passes.
+
+**Where I overruled or corrected the tool**
+
+- Its first guard against silent overwrites matched cue words ("actually", "change"). I rejected that for a
+  structured `change_kind` (`new` / `correction` / `conflict`) checked against the stored profile in code
+  (`f5bd273`).
+- It compared token savings against an old run's average; I had that dropped and only the measured prompt probe
+  reported.
+- I ruled that `results.md` is never hand-edited. That is why raw results record model, commit and dirty state
+  per run and the report is rendered from them (`79b072a`).
+- I set the reporting rule: the headline is the first full pass on one clean commit and later runs sit beside it,
+  never replacing it. That is why this README still leads with 9/12 on `ad8f997`.
+- When the full pass on `c3b7539` showed that one of its fixes (accepting plain text as a reply) caused the case
+  01 regression, I had it reverted, not patched over (`bfe58d8`, `b5cb697`).
+- I kept case 03 as a documented limitation rather than add a prompt rule just to move the number (`38279e7`).
+- I declined to rewrite a commit message once that would have broken the link between recorded results and the
+  code they ran on.
